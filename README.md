@@ -99,3 +99,14 @@ Supported fields:
 - Existing simple `url: /path/file.gpx` blocks still work for basic GPX usage
 - GeoJSON styling uses Leaflet defaults in this version
 - The widget loads Leaflet from the public CDN at runtime
+
+## Global Config
+
+You can override the default tile layer globally with SilverBullet config keys:
+
+```lua
+config.set("gpxmap.tileUrl", "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+config.set("gpxmap.tileAttribution", "© OpenTopoMap contributors")
+```
+
+If these keys are not set, the widget falls back to the standard OpenStreetMap tile URL and attribution.

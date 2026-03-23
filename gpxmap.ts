@@ -1,4 +1,8 @@
-import { editor, space } from "@silverbulletmd/silverbullet/syscalls";
+import {
+    editor,
+    config as globalConfig,
+    space,
+} from "@silverbulletmd/silverbullet/syscalls";
 
 type Coordinate = [number, number];
 
@@ -41,11 +45,16 @@ type MapSourceData =
 type RenderPayload = {
 	config: MapConfig;
 	sourceData?: MapSourceData;
+	tileUrl: string;
+	tileAttribution: string;
 };
 
 const DEFAULT_HEIGHT = "400px";
 const DEFAULT_ZOOM = 13;
+const DEFAULT_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const DEFAULT_TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 let mapInstanceCounter = 0;
+let configSchemaRegistration: Promise<void> | undefined;
 
 function escapeHtml(value: string): string {
 	return value
@@ -377,6 +386,47 @@ export async function insertGPXMap(): Promise<void> {
 	await editor.replaceRange(from, to, buildStarterBlock());
 }
 
+async function ensureConfigSchemaDefined(): Promise<void> {
+	if (!configSchemaRegistration) {
+		configSchemaRegistration = Promise.all([
+			globalConfig.define("gpxmap.tileUrl", {
+				type: "string",
+				default: DEFAULT_TILE_URL,
+				description: "Leaflet tile URL template used by gpxmap.",
+			}),
+			globalConfig.define("gpxmap.tileAttribution", {
+				type: "string",
+				default: DEFAULT_TILE_ATTRIBUTION,
+				description: "Leaflet attribution text used by gpxmap.",
+			}),
+		]).then(() => undefined);
+	}
+
+	await configSchemaRegistration;
+}
+
+async function loadTileConfig(): Promise<{
+	tileUrl: string;
+	tileAttribution: string;
+}> {
+	await ensureConfigSchemaDefined();
+
+	const configuredTileUrl = await globalConfig.get(
+		"gpxmap.tileUrl",
+		DEFAULT_TILE_URL,
+	);
+	const configuredTileAttribution = await globalConfig.get(
+		"gpxmap.tileAttribution",
+		DEFAULT_TILE_ATTRIBUTION,
+	);
+
+	return {
+		tileUrl: asString(configuredTileUrl) || DEFAULT_TILE_URL,
+		tileAttribution:
+			asString(configuredTileAttribution) || DEFAULT_TILE_ATTRIBUTION,
+	};
+}
+
 function createMapScript(payload: RenderPayload, mapId: string): string {
 	return `
     (function() {
@@ -499,8 +549,8 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
         const map = L.map(mapId).setView(initialCenter, initialZoom);
         globalThis[mapStoreKey][mapId] = map;
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors'
+        L.tileLayer(payload.tileUrl, {
+          attribution: payload.tileAttribution
         }).addTo(map);
 
         const fitCoordinates = [];
@@ -621,6 +671,7 @@ export async function renderGPXWidget(
 		const sourceData = config.source
 			? await loadSourceData(config.source)
 			: undefined;
+		const tileConfig = await loadTileConfig();
 
 		if (!sourceData && config.markers.length === 0 && !config.center) {
 			return buildError(
@@ -633,7 +684,7 @@ export async function renderGPXWidget(
 
 		return {
 			html,
-			script: createMapScript({ config, sourceData }, mapId),
+			script: createMapScript({ config, sourceData, ...tileConfig }, mapId),
 		};
 	} catch (error) {
 		const message =
