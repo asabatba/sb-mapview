@@ -2,8 +2,6 @@ name: gpxmap
 version: 0.1
 imports:
   - https://get.silverbullet.md/global.plug.json
-requiredPermissions:
-  - fetch
 functions:
   # Command to create a new GPX map widget
   insertGPXMap:

@@ -1,7 +1,7 @@
 ---
-name: Library/arsaba/plug-gpx/PLUG
+name: Library/gpxmap/PLUG
 tags: meta/library
 files:
-- gpxmap.js
+- gpxmap.plug.js
 ---
-This library does maps!
+Render GPX tracks and waypoints in SilverBullet with a Leaflet-based `gpxmap` code widget.

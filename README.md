@@ -1,44 +1,50 @@
-# SilverBullet plug template
+# SilverBullet GPX Map Plug
 
-Insert your plug description here.
+This plug adds a `gpxmap` code widget for rendering GPX tracks or waypoints inside SilverBullet using Leaflet.
 
-## Development preparation
+## Features
 
-1. In your (development) space, create a folder under `Library/` that you can use as a namespace, for instance using your Github username:
-
-```bash
-mkdir -p ~/myspace/Library/you
-```
-
-1. Symlink this plug's folder into your namespaced folder:
-
-```bash
-ln -s $PWD ~/myspace/Library/you/hello
-```
-
-1. Update the `name` attribute in `PLUG.md` to match the location of that PLUG file in your space, and the file name of the destination `.plug.js` file as well e.g.
-
-```
----
-name: Library/you/hello/PLUG
-tags: meta/library
-files:
-- myplug.plug.js
----
-```
+- Render GPX track data as a polyline with start and end markers
+- Fall back to GPX waypoints when a file has no trackpoints
+- Insert a widget block with the `GPX: Insert Map Widget` command
+- Show clear in-widget errors for missing files, invalid GPX, or empty coordinate data
 
 ## Build
 
-To build this plug, make sure you have [Node.js installed](https://nodejs.org/). Then, install dependencies and build the plug with:
+Install dependencies and compile the distributable plug:
 
 ```shell
 npm install
 npm run build
 ```
 
-Within ~20s SilverBullet will automatically sync your plug code, just watch your browser's JavaScript console to see when this happens. Then run the `Plugs: Reload` command to reload and reactivate the plug (no reload required).
+The build generates `gpxmap.plug.js`, which is the file referenced by `PLUG.md`.
 
-## Distribution
+## Install In SilverBullet
 
-1. Commit the compiled `.plug.js` file to the repository
-2. Other people can now install your plug via the `Library: Install` command using the URL to your PLUG.md file as URI, e.g. `https://github.com/silverbulletmd/silverbullet-plug-template/blob/main/PLUG.md`
+Publish this repository somewhere SilverBullet can access, then install the library from the `PLUG.md` URL with `Library: Install`.
+
+If you are developing locally, place or symlink this folder into your SilverBullet space and make sure [`PLUG.md`](./PLUG.md) is available at `Library/gpxmap/PLUG`.
+
+## Usage
+
+Insert a code block like this:
+
+````markdown
+```gpxmap
+url: /hikes/my-route.gpx
+height: 400px
+```
+````
+
+Supported fields:
+
+- `url`: path to a GPX file in your SilverBullet space
+- `height`: CSS height for the map container, for example `400px` or `50vh`
+
+You can also run the `GPX: Insert Map Widget` command and fill in the prompts.
+
+## Notes
+
+- The widget loads Leaflet from the public CDN at runtime.
+- The current implementation reads `trkpt` elements first and falls back to `wpt` elements if no trackpoints are present.
