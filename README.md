@@ -34,7 +34,7 @@ The widget body accepts a JSON object.
 
 Supported fields:
 
-- `source`: path to a `.gpx`, `.geojson`, or `.json` file in your SilverBullet space
+- `source`: a path or array of paths to `.gpx`, `.geojson`, or `.json` files in your SilverBullet space
 - `url`: backward-compatible alias for `source`
 - `height`: CSS height for the map container, for example `400px` or `50vh`
 - `center`: `[lat, lon]`
@@ -58,6 +58,21 @@ Supported fields:
 ```mapview
 {
   "source": "/maps/city.geojson",
+  "height": "450px"
+}
+```
+````
+
+### Multi-Source Map
+
+````markdown
+```mapview
+{
+  "source": [
+    "/hikes/day-1.gpx",
+    "/hikes/day-2.gpx",
+    "/maps/waypoints.geojson"
+  ],
   "height": "450px"
 }
 ```
@@ -90,7 +105,7 @@ Supported fields:
 ## View Behavior
 
 - If `center` is present, the map uses `center` and `zoom` or defaults to zoom `13`
-- If `center` is omitted, the widget fits all loaded overlays and inline markers
+- If `center` is omitted, the widget fits all loaded overlays and inline markers, including multiple source files
 - If auto-fit resolves to a single point, the map centers that point at zoom `13`
 - A map with only `center` and `zoom` is valid and renders a base map with no overlays
 

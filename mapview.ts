@@ -1,6 +1,6 @@
 import {
-	config as globalConfig,
 	editor,
+	config as globalConfig,
 	space,
 } from "@silverbulletmd/silverbullet/syscalls";
 
@@ -23,7 +23,7 @@ type MarkerConfig = {
 };
 
 type MapConfig = {
-	source?: string;
+	sources: string[];
 	height: string;
 	center?: Coordinate;
 	zoom?: number;
@@ -47,7 +47,7 @@ type MapSourceData = GpxSourceData | GeoJsonSourceData;
 
 type RenderPayload = {
 	config: MapConfig;
-	sourceData?: MapSourceData;
+	sourceData: MapSourceData[];
 	styleUrl: string;
 };
 
@@ -78,10 +78,9 @@ function decodeXmlEntities(value: string): string {
 
 function buildError(message: string): { html: string; script: string } {
 	return {
-		html:
-			`<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${
-				escapeHtml(message)
-			}</pre>`,
+		html: `<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+			message,
+		)}</pre>`,
 		script: "",
 	};
 }
@@ -146,9 +145,8 @@ function parseWidgetConfig(content: string): RawMapConfig {
 		try {
 			parsed = JSON.parse(trimmed);
 		} catch (error) {
-			const message = error instanceof Error
-				? error.message
-				: "Unknown JSON parse error.";
+			const message =
+				error instanceof Error ? error.message : "Unknown JSON parse error.";
 			throw new Error(`Map config must be valid JSON: ${message}`);
 		}
 
@@ -212,23 +210,49 @@ function normalizeMarkers(value: unknown): MarkerConfig[] {
 	});
 }
 
+function normalizeSources(sourceValue: unknown): string[] {
+	if (sourceValue === undefined) {
+		return [];
+	}
+
+	if (typeof sourceValue === "string") {
+		const source = asString(sourceValue);
+		return source ? [source] : [];
+	}
+
+	if (!Array.isArray(sourceValue)) {
+		throw new Error("`source` must be a string or an array of strings.");
+	}
+
+	return sourceValue.map((source, index) => {
+		const normalizedSource = asString(source);
+		if (!normalizedSource) {
+			throw new Error(`Source ${index + 1} must be a non-empty string.`);
+		}
+
+		return normalizedSource;
+	});
+}
+
 function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
-	const source = asString(rawConfig.source) || asString(rawConfig.url);
+	const sources = normalizeSources(
+		rawConfig.source !== undefined ? rawConfig.source : rawConfig.url,
+	);
 	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
-	const center = rawConfig.center === undefined
-		? undefined
-		: asCoordinate(rawConfig.center);
+	const center =
+		rawConfig.center === undefined ? undefined : asCoordinate(rawConfig.center);
 	if (rawConfig.center !== undefined && !center) {
 		throw new Error("`center` must be a JSON array like [lat, lon].");
 	}
 
-	const zoom = rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
+	const zoom =
+		rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
 	if (rawConfig.zoom !== undefined && !Number.isFinite(zoom)) {
 		throw new Error("`zoom` must be a number.");
 	}
 
 	return {
-		source,
+		sources,
 		height,
 		center,
 		zoom,
@@ -273,7 +297,9 @@ function extractWaypoints(gpxContent: string): MarkerConfig[] {
 		}
 
 		const nameMatch = match[3].match(/<name\b[^>]*>([\s\S]*?)<\/name>/i);
-		const popup = nameMatch ? decodeXmlEntities(nameMatch[1].trim()) : "Waypoint";
+		const popup = nameMatch
+			? decodeXmlEntities(nameMatch[1].trim())
+			: "Waypoint";
 		markers.push({ lat, lon, popup });
 	}
 
@@ -307,17 +333,20 @@ function hasGpxRoot(gpxContent: string): boolean {
 }
 
 function isSupportedGeoJsonType(type: unknown): boolean {
-	return typeof type === "string" && [
-		"Feature",
-		"FeatureCollection",
-		"Point",
-		"MultiPoint",
-		"LineString",
-		"MultiLineString",
-		"Polygon",
-		"MultiPolygon",
-		"GeometryCollection",
-	].includes(type);
+	return (
+		typeof type === "string" &&
+		[
+			"Feature",
+			"FeatureCollection",
+			"Point",
+			"MultiPoint",
+			"LineString",
+			"MultiLineString",
+			"Polygon",
+			"MultiPolygon",
+			"GeometryCollection",
+		].includes(type)
+	);
 }
 
 function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
@@ -325,9 +354,8 @@ function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
 	try {
 		parsed = JSON.parse(content);
 	} catch (error) {
-			const message = error instanceof Error
-			? error.message
-			: "Unknown JSON parse error.";
+		const message =
+			error instanceof Error ? error.message : "Unknown JSON parse error.";
 		throw new Error(`GeoJSON Error: Invalid JSON in ${sourcePath}: ${message}`);
 	}
 
@@ -441,7 +469,10 @@ function buildStarterBlock(): string {
 	return `\`\`\`mapview
 {
   "height": "400px",
-  "source": "/path/to/data.gpx",
+  "source": [
+    "/path/to/route.gpx",
+    "/path/to/pois.geojson"
+  ],
   "center": [41.3874, 2.1686],
   "zoom": 13,
   "markers": [
@@ -777,37 +808,38 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
           try {
             const fitPoints = [];
 
-            if (payload.sourceData && payload.sourceData.kind === 'gpx') {
-              if (payload.sourceData.trackGeoJson) {
-                addGeoJsonLayers(
+            payload.sourceData.forEach((sourceData, index) => {
+              if (sourceData.kind === 'gpx') {
+                if (sourceData.trackGeoJson) {
+                  addGeoJsonLayers(
+                    maplibregl,
+                    map,
+                    mapId + '-gpx-source-' + index,
+                    sourceData.trackGeoJson,
+                    mapId + '-gpx-' + index,
+                    fitPoints
+                  );
+                }
+
+                addMarker(
                   maplibregl,
                   map,
-                  mapId + '-gpx-source',
-                  payload.sourceData.trackGeoJson,
-                  mapId + '-gpx',
-                  fitPoints
+                  sourceData.markers,
+                  fitPoints,
+                  markerStore
                 );
+                return;
               }
 
-              addMarker(
-                maplibregl,
-                map,
-                payload.sourceData.markers,
-                fitPoints,
-                markerStore
-              );
-            }
-
-            if (payload.sourceData && payload.sourceData.kind === 'geojson') {
               addGeoJsonLayers(
                 maplibregl,
                 map,
-                mapId + '-geojson-source',
-                payload.sourceData.data,
-                mapId + '-geojson',
+                mapId + '-geojson-source-' + index,
+                sourceData.data,
+                mapId + '-geojson-' + index,
                 fitPoints
               );
-            }
+            });
 
             addMarker(maplibregl, map, config.markers, fitPoints, markerStore);
 
@@ -862,29 +894,29 @@ export async function renderMapViewWidget(
 ): Promise<{ html: string; script: string }> {
 	try {
 		const config = normalizeConfig(parseWidgetConfig(widgetBody));
-		const sourceData = config.source
-			? await loadSourceData(config.source)
-			: undefined;
+		const sourceData = await Promise.all(config.sources.map(loadSourceData));
 		const styleConfig = await loadStyleConfig();
 
-		if (!sourceData && config.markers.length === 0 && !config.center) {
+		if (
+			sourceData.length === 0 &&
+			config.markers.length === 0 &&
+			!config.center
+		) {
 			return buildError(
 				"Map Error: Provide a source file, at least one marker, or a center coordinate.",
 			);
 		}
 
 		const mapId = createMapId();
-		const html =
-			`<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;"></div>`;
+		const html = `<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;"></div>`;
 
 		return {
 			html,
 			script: createMapScript({ config, sourceData, ...styleConfig }, mapId),
 		};
 	} catch (error) {
-		const message = error instanceof Error
-			? error.message
-			: "Unknown map rendering error.";
+		const message =
+			error instanceof Error ? error.message : "Unknown map rendering error.";
 		return buildError(message);
 	}
 }
