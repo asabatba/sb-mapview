@@ -1,0 +1,25 @@
+name: gpxmap
+version: 0.1
+imports:
+  - https://get.silverbullet.md/global.plug.json
+requiredPermissions:
+  - fetch
+functions:
+  # Command to create a new GPX map widget
+  insertGPXMap:
+    path: ./gpxmap.ts:insertGPXMap
+    command:
+      name: "GPX: Insert Map Widget"
+      requireMode: rw
+
+  # The code widget renderer - this handles ```gpxmap blocks
+  renderGPXWidget:
+    path: ./gpxmap.ts:renderGPXWidget
+    codeWidget: gpxmap
+
+  # Slash command for quick insertion
+  gpxSlashComplete:
+    path: ./gpxmap.ts:gpxSlashComplete
+    events:
+      - slash:complete
+      
