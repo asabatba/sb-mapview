@@ -42,7 +42,7 @@ Supported fields:
 - `styleUrl`: optional per-widget MapLibre style URL override
 - `sourceStyle`: shared style applied to all file-based sources unless a source overrides it
 - `markerStyle`: shared style applied to inline markers unless a marker overrides it
-- `markers`: array of marker objects with `lat`, `lon`, optional `label`, `popup`, `color`, and `scale`
+- `markers`: array of marker objects with `lat`, `lon`, optional `label`, `popup`, `color`, `scale`, `popupBackgroundColor`, `popupTextColor`, `popupBorderColor`, `popupClassName`, and `popupMaxWidth`
 
 Source objects use this shape:
 
@@ -137,7 +137,10 @@ Source objects use this shape:
   "zoom": 13,
   "markerStyle": {
     "color": "#7c3aed",
-    "scale": 1.05
+    "scale": 1.05,
+    "popupBackgroundColor": "#111827",
+    "popupTextColor": "#f8fafc",
+    "popupBorderColor": "#334155"
   },
   "markers": [
     {
@@ -150,12 +153,16 @@ Source objects use this shape:
       "lon": 2.1744,
       "label": "Sagrada Familia",
       "color": "#dc2626",
-      "scale": 1.2
+      "scale": 1.2,
+      "popupBackgroundColor": "#7f1d1d",
+      "popupTextColor": "#fef2f2"
     }
   ]
 }
 ```
 ````
+
+Popup styling can be set globally with `markerStyle` and overridden per marker. Even without explicit popup colors, the widget now applies a readable default popup theme instead of relying on MapLibre's plain white popup styling.
 
 ## View Behavior
 

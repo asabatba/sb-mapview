@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "@silverbulletmd/silverbullet": ">=2.5.3"
+  },
+  "devDependencies": {
+    "maplibre-gl": "^5.21.0"
   }
 }

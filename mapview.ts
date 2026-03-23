@@ -4,7 +4,16 @@ import {
 	space,
 } from "@silverbulletmd/silverbullet/syscalls";
 
+import type { MarkerOptions, PopupOptions } from "maplibre-gl";
+
 type Coordinate = [number, number];
+type SupportedMarkerOptions = Pick<MarkerOptions, "color" | "scale">;
+type SupportedPopupOptions = Pick<PopupOptions, "className" | "maxWidth">;
+type PopupStyle = {
+	popupBackgroundColor?: string;
+	popupTextColor?: string;
+	popupBorderColor?: string;
+};
 
 type RawMapConfig = {
 	source?: unknown;
@@ -29,19 +38,21 @@ type SourceStyle = {
 	markerColor?: string;
 };
 
-type MarkerStyle = {
-	color?: string;
-	scale?: number;
-};
+type MarkerStyle = SupportedMarkerOptions &
+	PopupStyle & {
+		popupClassName?: SupportedPopupOptions["className"];
+		popupMaxWidth?: SupportedPopupOptions["maxWidth"];
+	};
 
-type MarkerConfig = {
-	lat: number;
-	lon: number;
-	label?: string;
-	popup?: string;
-	color?: string;
-	scale?: number;
-};
+type MarkerConfig = PopupStyle &
+	SupportedMarkerOptions & {
+		lat: number;
+		lon: number;
+		label?: string;
+		popup?: string;
+		popupClassName?: SupportedPopupOptions["className"];
+		popupMaxWidth?: SupportedPopupOptions["maxWidth"];
+	};
 
 type SourceEntry = {
 	path: string;
@@ -240,6 +251,23 @@ function parseColorField(
 	return color;
 }
 
+function parseStringField(
+	value: unknown,
+	fieldName: string,
+	context: string,
+): string | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	const stringValue = asString(value);
+	if (!stringValue) {
+		throw new Error(`${context}: \`${fieldName}\` must be a non-empty string.`);
+	}
+
+	return stringValue;
+}
+
 function parsePositiveNumberField(
 	value: unknown,
 	fieldName: string,
@@ -337,6 +365,31 @@ function normalizeMarkerStyle(value: unknown, context: string): MarkerStyle {
 	return {
 		color: parseColorField(rawStyle.color, "color", context),
 		scale: parsePositiveNumberField(rawStyle.scale, "scale", context),
+		popupBackgroundColor: parseColorField(
+			rawStyle.popupBackgroundColor,
+			"popupBackgroundColor",
+			context,
+		),
+		popupTextColor: parseColorField(
+			rawStyle.popupTextColor,
+			"popupTextColor",
+			context,
+		),
+		popupBorderColor: parseColorField(
+			rawStyle.popupBorderColor,
+			"popupBorderColor",
+			context,
+		),
+		popupClassName: parseStringField(
+			rawStyle.popupClassName,
+			"popupClassName",
+			context,
+		),
+		popupMaxWidth: parseStringField(
+			rawStyle.popupMaxWidth,
+			"popupMaxWidth",
+			context,
+		),
 	};
 }
 
@@ -357,6 +410,31 @@ function markerStyleFromRecord(
 	return {
 		color: parseColorField(record.color, "color", context),
 		scale: parsePositiveNumberField(record.scale, "scale", context),
+		popupBackgroundColor: parseColorField(
+			record.popupBackgroundColor,
+			"popupBackgroundColor",
+			context,
+		),
+		popupTextColor: parseColorField(
+			record.popupTextColor,
+			"popupTextColor",
+			context,
+		),
+		popupBorderColor: parseColorField(
+			record.popupBorderColor,
+			"popupBorderColor",
+			context,
+		),
+		popupClassName: parseStringField(
+			record.popupClassName,
+			"popupClassName",
+			context,
+		),
+		popupMaxWidth: parseStringField(
+			record.popupMaxWidth,
+			"popupMaxWidth",
+			context,
+		),
 	};
 }
 
@@ -398,6 +476,11 @@ function normalizeMarkers(
 			popup: asString(rawMarker.popup),
 			color: markerStyle.color,
 			scale: markerStyle.scale,
+			popupBackgroundColor: markerStyle.popupBackgroundColor,
+			popupTextColor: markerStyle.popupTextColor,
+			popupBorderColor: markerStyle.popupBorderColor,
+			popupClassName: markerStyle.popupClassName,
+			popupMaxWidth: markerStyle.popupMaxWidth,
 		};
 	});
 }
@@ -766,7 +849,10 @@ function buildStarterBlock(): string {
     }
   ],
   "markerStyle": {
-    "color": "#7c3aed"
+    "color": "#7c3aed",
+    "popupBackgroundColor": "#111827",
+    "popupTextColor": "#f8fafc",
+    "popupBorderColor": "#334155"
   },
   "markers": [
     {
@@ -826,9 +912,11 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
       const payload = ${JSON.stringify(payload)};
       const globalKey = "__mapviewMapLibreLoader";
       const mapStoreKey = "__mapviewInstances";
+      const popupStyleStoreKey = "__mapviewPopupStyles";
       const cssHref = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css";
       const scriptSrc = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js";
       const defaultSourceStyle = ${JSON.stringify(DEFAULT_SOURCE_STYLE)};
+      const defaultPopupClassName = "mapview-popup-default";
 
       function loadMapLibre() {
         if (globalThis[globalKey]) {
@@ -887,6 +975,94 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
 
       function toLngLat(lat, lon) {
         return [lon, lat];
+      }
+
+      function sanitizeClassSegment(value) {
+        return String(value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
+
+      function ensurePopupStyleStore() {
+        if (!globalThis[popupStyleStoreKey]) {
+          globalThis[popupStyleStoreKey] = {
+            element: null,
+            rules: {}
+          };
+        }
+
+        const store = globalThis[popupStyleStoreKey];
+        if (!store.element || !store.element.isConnected) {
+          const style = document.createElement("style");
+          style.setAttribute("data-mapview-popup-styles", "true");
+          document.head.appendChild(style);
+          store.element = style;
+        }
+
+        return store;
+      }
+
+      function appendPopupStyleRule(className, popupStyle) {
+        if (!className) {
+          return;
+        }
+
+        const store = ensurePopupStyleStore();
+        if (store.rules[className]) {
+          return;
+        }
+
+        const backgroundColor =
+          popupStyle && popupStyle.backgroundColor
+            ? popupStyle.backgroundColor
+            : "Canvas";
+        const textColor =
+          popupStyle && popupStyle.textColor
+            ? popupStyle.textColor
+            : "CanvasText";
+        const borderColor =
+          popupStyle && popupStyle.borderColor
+            ? popupStyle.borderColor
+            : backgroundColor;
+
+        store.element.appendChild(
+          document.createTextNode(
+            ".maplibregl-popup." + className + " .maplibregl-popup-content {" +
+              "background:" + backgroundColor + ";" +
+              "color:" + textColor + ";" +
+              "border:1px solid " + borderColor + ";" +
+              "box-shadow:0 10px 28px rgba(0, 0, 0, 0.18);" +
+            "}" +
+            ".maplibregl-popup." + className + " .maplibregl-popup-close-button {" +
+              "color:" + textColor + ";" +
+            "}" +
+            ".maplibregl-popup.maplibregl-popup-anchor-top." + className + " .maplibregl-popup-tip," +
+            ".maplibregl-popup.maplibregl-popup-anchor-top-left." + className + " .maplibregl-popup-tip," +
+            ".maplibregl-popup.maplibregl-popup-anchor-top-right." + className + " .maplibregl-popup-tip {" +
+              "border-bottom-color:" + backgroundColor + ";" +
+            "}" +
+            ".maplibregl-popup.maplibregl-popup-anchor-bottom." + className + " .maplibregl-popup-tip," +
+            ".maplibregl-popup.maplibregl-popup-anchor-bottom-left." + className + " .maplibregl-popup-tip," +
+            ".maplibregl-popup.maplibregl-popup-anchor-bottom-right." + className + " .maplibregl-popup-tip {" +
+              "border-top-color:" + backgroundColor + ";" +
+            "}" +
+            ".maplibregl-popup.maplibregl-popup-anchor-left." + className + " .maplibregl-popup-tip {" +
+              "border-right-color:" + backgroundColor + ";" +
+            "}" +
+            ".maplibregl-popup.maplibregl-popup-anchor-right." + className + " .maplibregl-popup-tip {" +
+              "border-left-color:" + backgroundColor + ";" +
+            "}"
+          )
+        );
+        store.rules[className] = true;
+      }
+
+      function ensureDefaultPopupStyle() {
+        appendPopupStyleRule(defaultPopupClassName, {
+          backgroundColor: "Canvas",
+          textColor: "CanvasText"
+        });
       }
 
       function extractFeaturePopupText(feature) {
@@ -958,14 +1134,56 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
         return options;
       }
 
-      function addMarker(maplibregl, map, markers, fitPoints, markerStore) {
-        markers.forEach((marker) => {
+      function buildPopupClassName(marker, popupKey) {
+        ensureDefaultPopupStyle();
+
+        const classNames = [defaultPopupClassName];
+        if (marker && typeof marker.popupClassName === "string" && marker.popupClassName) {
+          classNames.push(marker.popupClassName);
+        }
+
+        if (
+          marker &&
+          (marker.popupBackgroundColor || marker.popupTextColor || marker.popupBorderColor)
+        ) {
+          const generatedClassName = "mapview-popup-" + sanitizeClassSegment(popupKey);
+          appendPopupStyleRule(generatedClassName, {
+            backgroundColor: marker.popupBackgroundColor,
+            textColor: marker.popupTextColor,
+            borderColor: marker.popupBorderColor
+          });
+          classNames.push(generatedClassName);
+        }
+
+        return classNames.join(" ");
+      }
+
+      function buildPopupOptions(marker, popupClassName) {
+        const options = {
+          offset: 25,
+          className: popupClassName
+        };
+
+        if (marker && typeof marker.popupMaxWidth === "string" && marker.popupMaxWidth) {
+          options.maxWidth = marker.popupMaxWidth;
+        }
+
+        return options;
+      }
+
+      function addMarker(maplibregl, map, markers, fitPoints, markerStore, markerGroupKey) {
+        markers.forEach((marker, index) => {
           const instance = new maplibregl.Marker(buildMarkerOptions(marker))
             .setLngLat(toLngLat(marker.lat, marker.lon));
 
           if (marker.popup || marker.label) {
+            const popupClassName = buildPopupClassName(
+              marker,
+              markerGroupKey + "-" + index
+            );
             instance.setPopup(
-              new maplibregl.Popup({ offset: 25 }).setText(String(marker.popup || marker.label))
+              new maplibregl.Popup(buildPopupOptions(marker, popupClassName))
+                .setText(String(marker.popup || marker.label))
             );
           }
 
@@ -983,7 +1201,10 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
             return;
           }
 
-          new maplibregl.Popup()
+          new maplibregl.Popup({
+            offset: 12,
+            className: buildPopupClassName(null, layerId)
+          })
             .setLngLat(event.lngLat)
             .setText(String(popupText))
             .addTo(map);
@@ -1092,6 +1313,7 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
         }
 
         cleanupExistingInstance();
+        ensureDefaultPopupStyle();
 
         const config = payload.config;
         const hasExplicitCenter = Array.isArray(config.center);
@@ -1153,7 +1375,8 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
                   map,
                   sourceData.markers,
                   fitPoints,
-                  markerStore
+                  markerStore,
+                  mapId + '-gpx-' + index
                 );
                 return;
               }
@@ -1169,7 +1392,14 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
               );
             });
 
-            addMarker(maplibregl, map, config.markers, fitPoints, markerStore);
+            addMarker(
+              maplibregl,
+              map,
+              config.markers,
+              fitPoints,
+              markerStore,
+              mapId + '-manual'
+            );
 
             if (hasExplicitCenter) {
               map.jumpTo({
