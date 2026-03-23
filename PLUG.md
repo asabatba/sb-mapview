@@ -1,7 +1,7 @@
 ---
-name: Library/gpxmap/PLUG
+name: Library/mapview/PLUG
 tags: meta/library
 files:
-- gpxmap.plug.js
+- mapview.plug.js
 ---
-Render GPX, GeoJSON, and manual marker maps in SilverBullet with a MapLibre GL JS based `gpxmap` code widget.
+Render GPX, GeoJSON, and manual marker maps in SilverBullet with a MapLibre GL JS based `mapview` code widget.

@@ -1,10 +1,10 @@
 {
-  "name": "silverbullet-plug-gpxmap",
+  "name": "silverbullet-plug-mapview",
   "version": "0.1.0",
   "private": true,
   "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with MapLibre GL JS",
   "scripts": {
-    "build": "npx plug-compile gpxmap.yaml"
+    "build": "npx plug-compile mapview.yaml"
   },
   "dependencies": {
     "@silverbulletmd/silverbullet": ">=2.5.3"

@@ -1,0 +1,28 @@
+name: mapview
+version: 0.1
+imports:
+  - https://get.silverbullet.md/global.plug.json
+functions:
+  insertMapView:
+    path: ./mapview.ts:insertMapView
+    command:
+      name: "MapView: Insert Widget"
+      requireMode: rw
+
+  renderMapViewWidget:
+    path: ./mapview.ts:renderMapViewWidget
+    codeWidget: mapview
+
+  renderGPXWidget:
+    path: ./mapview.ts:renderGPXWidget
+    codeWidget: gpxmap
+
+  mapViewSlashComplete:
+    path: ./mapview.ts:mapViewSlashComplete
+    events:
+      - slash:complete
+
+  gpxSlashComplete:
+    path: ./mapview.ts:gpxSlashComplete
+    events:
+      - slash:complete

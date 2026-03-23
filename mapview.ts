@@ -1,6 +1,6 @@
 import {
-	editor,
 	config as globalConfig,
+	editor,
 	space,
 } from "@silverbulletmd/silverbullet/syscalls";
 
@@ -54,7 +54,7 @@ type RenderPayload = {
 const DEFAULT_HEIGHT = "400px";
 const DEFAULT_ZOOM = 13;
 const DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json";
-const MAPLIBRE_VERSION = "5";
+const MAPLIBRE_VERSION = "5.21.0";
 let mapInstanceCounter = 0;
 let configSchemaRegistration: Promise<void> | undefined;
 
@@ -78,9 +78,10 @@ function decodeXmlEntities(value: string): string {
 
 function buildError(message: string): { html: string; script: string } {
 	return {
-		html: `<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
-			message,
-		)}</pre>`,
+		html:
+			`<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${
+				escapeHtml(message)
+			}</pre>`,
 		script: "",
 	};
 }
@@ -95,7 +96,7 @@ function createMapId(): string {
 		randomPart = Math.random().toString(36).slice(2, 10);
 	}
 
-	return `gpx-map-${mapInstanceCounter}-${randomPart}`;
+	return `mapview-${mapInstanceCounter}-${randomPart}`;
 }
 
 function parseLegacyConfig(content: string): RawMapConfig {
@@ -145,8 +146,9 @@ function parseWidgetConfig(content: string): RawMapConfig {
 		try {
 			parsed = JSON.parse(trimmed);
 		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : "Unknown JSON parse error.";
+			const message = error instanceof Error
+				? error.message
+				: "Unknown JSON parse error.";
 			throw new Error(`Map config must be valid JSON: ${message}`);
 		}
 
@@ -213,14 +215,14 @@ function normalizeMarkers(value: unknown): MarkerConfig[] {
 function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 	const source = asString(rawConfig.source) || asString(rawConfig.url);
 	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
-	const center =
-		rawConfig.center === undefined ? undefined : asCoordinate(rawConfig.center);
+	const center = rawConfig.center === undefined
+		? undefined
+		: asCoordinate(rawConfig.center);
 	if (rawConfig.center !== undefined && !center) {
 		throw new Error("`center` must be a JSON array like [lat, lon].");
 	}
 
-	const zoom =
-		rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
+	const zoom = rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
 	if (rawConfig.zoom !== undefined && !Number.isFinite(zoom)) {
 		throw new Error("`zoom` must be a number.");
 	}
@@ -271,9 +273,7 @@ function extractWaypoints(gpxContent: string): MarkerConfig[] {
 		}
 
 		const nameMatch = match[3].match(/<name\b[^>]*>([\s\S]*?)<\/name>/i);
-		const popup = nameMatch
-			? decodeXmlEntities(nameMatch[1].trim())
-			: "Waypoint";
+		const popup = nameMatch ? decodeXmlEntities(nameMatch[1].trim()) : "Waypoint";
 		markers.push({ lat, lon, popup });
 	}
 
@@ -307,20 +307,17 @@ function hasGpxRoot(gpxContent: string): boolean {
 }
 
 function isSupportedGeoJsonType(type: unknown): boolean {
-	return (
-		typeof type === "string" &&
-		[
-			"Feature",
-			"FeatureCollection",
-			"Point",
-			"MultiPoint",
-			"LineString",
-			"MultiLineString",
-			"Polygon",
-			"MultiPolygon",
-			"GeometryCollection",
-		].includes(type)
-	);
+	return typeof type === "string" && [
+		"Feature",
+		"FeatureCollection",
+		"Point",
+		"MultiPoint",
+		"LineString",
+		"MultiLineString",
+		"Polygon",
+		"MultiPolygon",
+		"GeometryCollection",
+	].includes(type);
 }
 
 function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
@@ -328,8 +325,9 @@ function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
 	try {
 		parsed = JSON.parse(content);
 	} catch (error) {
-		const message =
-			error instanceof Error ? error.message : "Unknown JSON parse error.";
+			const message = error instanceof Error
+			? error.message
+			: "Unknown JSON parse error.";
 		throw new Error(`GeoJSON Error: Invalid JSON in ${sourcePath}: ${message}`);
 	}
 
@@ -367,7 +365,7 @@ async function readSourceFile(sourcePath: string): Promise<string> {
 		try {
 			return new TextDecoder().decode(await space.readFile(candidate));
 		} catch {
-			//
+			continue;
 		}
 	}
 
@@ -440,7 +438,7 @@ async function loadSourceData(sourcePath: string): Promise<MapSourceData> {
 }
 
 function buildStarterBlock(): string {
-	return `\`\`\`gpxmap
+	return `\`\`\`mapview
 {
   "height": "400px",
   "source": "/path/to/data.gpx",
@@ -457,7 +455,7 @@ function buildStarterBlock(): string {
 \`\`\``;
 }
 
-export async function insertGPXMap(): Promise<void> {
+export async function insertMapView(): Promise<void> {
 	const selection = await editor.getSelection();
 	const { from, to } = selection;
 	await editor.replaceRange(from, to, buildStarterBlock());
@@ -466,10 +464,10 @@ export async function insertGPXMap(): Promise<void> {
 async function ensureConfigSchemaDefined(): Promise<void> {
 	if (!configSchemaRegistration) {
 		configSchemaRegistration = Promise.all([
-			globalConfig.define("gpxmap.styleUrl", {
+			globalConfig.define("mapview.styleUrl", {
 				type: "string",
 				default: DEFAULT_STYLE_URL,
-				description: "MapLibre style URL used by gpxmap.",
+				description: "MapLibre style URL used by mapview.",
 			}),
 		]).then(() => undefined);
 	}
@@ -481,7 +479,7 @@ async function loadStyleConfig(): Promise<{ styleUrl: string }> {
 	await ensureConfigSchemaDefined();
 
 	const configuredStyleUrl = await globalConfig.get(
-		"gpxmap.styleUrl",
+		"mapview.styleUrl",
 		DEFAULT_STYLE_URL,
 	);
 
@@ -495,8 +493,8 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
     (function() {
       const mapId = ${JSON.stringify(mapId)};
       const payload = ${JSON.stringify(payload)};
-      const globalKey = "__gpxMapMapLibreLoader";
-      const mapStoreKey = "__gpxMapInstances";
+      const globalKey = "__mapviewMapLibreLoader";
+      const mapStoreKey = "__mapviewInstances";
       const cssHref = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css";
       const scriptSrc = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js";
 
@@ -506,12 +504,12 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
         }
 
         globalThis[globalKey] = new Promise((resolve, reject) => {
-          const existingStylesheet = document.querySelector('link[data-gpxmap-maplibre="true"]');
+          const existingStylesheet = document.querySelector('link[data-mapview-maplibre="true"]');
           if (!existingStylesheet) {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = cssHref;
-            link.setAttribute('data-gpxmap-maplibre', 'true');
+            link.setAttribute('data-mapview-maplibre', 'true');
             document.head.appendChild(link);
           }
 
@@ -520,7 +518,7 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
             return;
           }
 
-          const existingScript = document.querySelector('script[data-gpxmap-maplibre="true"]');
+          const existingScript = document.querySelector('script[data-mapview-maplibre="true"]');
           if (existingScript) {
             existingScript.addEventListener('load', () => resolve(globalThis.maplibregl), { once: true });
             existingScript.addEventListener('error', () => reject(new Error('Failed to load MapLibre GL JS.')), { once: true });
@@ -529,7 +527,7 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
 
           const script = document.createElement('script');
           script.src = scriptSrc;
-          script.setAttribute('data-gpxmap-maplibre', 'true');
+          script.setAttribute('data-mapview-maplibre', 'true');
           script.onload = () => resolve(globalThis.maplibregl);
           script.onerror = () => reject(new Error('Failed to load MapLibre GL JS.'));
           document.head.appendChild(script);
@@ -859,7 +857,7 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
   `;
 }
 
-export async function renderGPXWidget(
+export async function renderMapViewWidget(
 	widgetBody: string,
 ): Promise<{ html: string; script: string }> {
 	try {
@@ -876,17 +874,37 @@ export async function renderGPXWidget(
 		}
 
 		const mapId = createMapId();
-		const html = `<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;"></div>`;
+		const html =
+			`<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;"></div>`;
 
 		return {
 			html,
 			script: createMapScript({ config, sourceData, ...styleConfig }, mapId),
 		};
 	} catch (error) {
-		const message =
-			error instanceof Error ? error.message : "Unknown map rendering error.";
+		const message = error instanceof Error
+			? error.message
+			: "Unknown map rendering error.";
 		return buildError(message);
 	}
+}
+
+export async function renderGPXWidget(
+	widgetBody: string,
+): Promise<{ html: string; script: string }> {
+	return renderMapViewWidget(widgetBody);
+}
+
+export function mapViewSlashComplete() {
+	return {
+		options: [
+			{
+				label: "mapview",
+				detail: "Insert mapview widget",
+				invoke: "mapview.insertMapView",
+			},
+		],
+	};
 }
 
 export function gpxSlashComplete() {
@@ -894,8 +912,13 @@ export function gpxSlashComplete() {
 		options: [
 			{
 				label: "gpxmap",
-				detail: "Insert generic map widget",
-				invoke: "gpxmap.insertGPXMap",
+				detail: "Insert legacy gpxmap widget",
+				invoke: "mapview.insertMapView",
+			},
+			{
+				label: "mapview",
+				detail: "Insert mapview widget",
+				invoke: "mapview.insertMapView",
 			},
 		],
 	};
