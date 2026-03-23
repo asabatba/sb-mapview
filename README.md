@@ -34,12 +34,33 @@ The widget body accepts a JSON object.
 
 Supported fields:
 
-- `source`: a path or array of paths to `.gpx`, `.geojson`, or `.json` files in your SilverBullet space
-- `url`: backward-compatible alias for `source`
+- `source`: a string path, a source object, or an array mixing both
+- `url`: backward-compatible alias for a single string `source`
 - `height`: CSS height for the map container, for example `400px` or `50vh`
 - `center`: `[lat, lon]`
 - `zoom`: numeric zoom level
-- `markers`: array of marker objects with `lat`, `lon`, optional `label`, and optional `popup`
+- `styleUrl`: optional per-widget MapLibre style URL override
+- `sourceStyle`: shared style applied to all file-based sources unless a source overrides it
+- `markerStyle`: shared style applied to inline markers unless a marker overrides it
+- `markers`: array of marker objects with `lat`, `lon`, optional `label`, `popup`, `color`, and `scale`
+
+Source objects use this shape:
+
+```json
+{
+  "path": "/maps/city.geojson",
+  "style": {
+    "lineColor": "#2563eb",
+    "lineWidth": 4,
+    "lineOpacity": 0.9,
+    "fillColor": "#3b82f6",
+    "fillOpacity": 0.2,
+    "pointColor": "#dc2626",
+    "pointRadius": 6,
+    "markerColor": "#0f766e"
+  }
+}
+```
 
 ### MapView Example
 
@@ -68,17 +89,45 @@ Supported fields:
 ````markdown
 ```mapview
 {
+  "sourceStyle": {
+    "lineWidth": 4,
+    "lineOpacity": 0.8
+  },
   "source": [
-    "/hikes/day-1.gpx",
+    {
+      "path": "/hikes/day-1.gpx",
+      "style": {
+        "lineColor": "#0f766e",
+        "markerColor": "#0f766e"
+      }
+    },
     "/hikes/day-2.gpx",
-    "/maps/waypoints.geojson"
+    {
+      "path": "/maps/waypoints.geojson",
+      "style": {
+        "pointColor": "#dc2626",
+        "fillColor": "#f59e0b"
+      }
+    }
   ],
   "height": "450px"
 }
 ```
 ````
 
-### Manual Marker Map
+### Per-Widget Basemap Override
+
+````markdown
+```mapview
+{
+  "styleUrl": "https://demotiles.maplibre.org/style.json",
+  "source": "/hikes/my-route.gpx",
+  "height": "400px"
+}
+```
+````
+
+### Styled Inline Markers
 
 ````markdown
 ```mapview
@@ -86,6 +135,10 @@ Supported fields:
   "height": "400px",
   "center": [41.3874, 2.1686],
   "zoom": 13,
+  "markerStyle": {
+    "color": "#7c3aed",
+    "scale": 1.05
+  },
   "markers": [
     {
       "lat": 41.3874,
@@ -95,7 +148,9 @@ Supported fields:
     {
       "lat": 41.4036,
       "lon": 2.1744,
-      "label": "Sagrada Familia"
+      "label": "Sagrada Familia",
+      "color": "#dc2626",
+      "scale": 1.2
     }
   ]
 }
@@ -111,7 +166,7 @@ Supported fields:
 
 ## Global Config
 
-The basemap is configured with a global MapLibre style URL:
+The basemap is configured with a global MapLibre style URL. Individual widgets can override it with `styleUrl`.
 
 ```lua
 config.set("mapview.styleUrl", "https://demotiles.maplibre.org/style.json")
@@ -123,5 +178,5 @@ If `mapview.styleUrl` is not set, the widget falls back to the official MapLibre
 
 - Existing simple `url: /path/file.gpx` blocks still work for basic GPX usage
 - Existing legacy ````gpxmap` blocks still render, but new usage should prefer `mapview`
-- GeoJSON styling uses MapLibre defaults in this version
+- `source` objects, `sourceStyle`, `markerStyle`, and per-widget `styleUrl` are JSON-only features
 - The widget loads MapLibre GL JS from the public CDN at runtime
