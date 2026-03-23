@@ -1,6 +1,6 @@
 # SilverBullet Generic Map Plug
 
-This plug adds a `gpxmap` code widget for rendering GPX files, GeoJSON files, and manual marker maps inside SilverBullet using Leaflet.
+This plug adds a `gpxmap` code widget for rendering GPX files, GeoJSON files, and manual marker maps inside SilverBullet using MapLibre GL JS.
 
 ## Features
 
@@ -97,16 +97,24 @@ Supported fields:
 ## Compatibility Notes
 
 - Existing simple `url: /path/file.gpx` blocks still work for basic GPX usage
-- GeoJSON styling uses Leaflet defaults in this version
-- The widget loads Leaflet from the public CDN at runtime
+- GeoJSON styling uses MapLibre defaults in this version
+- The widget loads MapLibre GL JS from the public CDN at runtime
 
 ## Global Config
 
-You can override the default tile layer globally with SilverBullet config keys:
+The basemap is now configured with a global MapLibre style URL:
 
 ```lua
-config.set("gpxmap.tileUrl", "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
-config.set("gpxmap.tileAttribution", "© OpenTopoMap contributors")
+config.set("gpxmap.styleUrl", "https://demotiles.maplibre.org/style.json")
 ```
 
-If these keys are not set, the widget falls back to the standard OpenStreetMap tile URL and attribution.
+If `gpxmap.styleUrl` is not set, the widget falls back to the official MapLibre demo style.
+
+## Migration Note
+
+This release removes the old raster tile config keys:
+
+- `gpxmap.tileUrl`
+- `gpxmap.tileAttribution`
+
+If you were previously customizing the base map through those keys, replace them with a single `gpxmap.styleUrl` value instead.

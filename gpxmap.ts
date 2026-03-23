@@ -1,7 +1,7 @@
 import {
-    editor,
-    config as globalConfig,
-    space,
+	editor,
+	config as globalConfig,
+	space,
 } from "@silverbulletmd/silverbullet/syscalls";
 
 type Coordinate = [number, number];
@@ -32,27 +32,29 @@ type MapConfig = {
 
 type GeoJsonData = Record<string, unknown>;
 
-type MapSourceData =
-	| {
-			kind: "gpx";
-			content: string;
-	  }
-	| {
-			kind: "geojson";
-			data: GeoJsonData;
-	  };
+type GpxSourceData = {
+	kind: "gpx";
+	trackGeoJson?: GeoJsonData;
+	markers: MarkerConfig[];
+};
+
+type GeoJsonSourceData = {
+	kind: "geojson";
+	data: GeoJsonData;
+};
+
+type MapSourceData = GpxSourceData | GeoJsonSourceData;
 
 type RenderPayload = {
 	config: MapConfig;
 	sourceData?: MapSourceData;
-	tileUrl: string;
-	tileAttribution: string;
+	styleUrl: string;
 };
 
 const DEFAULT_HEIGHT = "400px";
 const DEFAULT_ZOOM = 13;
-const DEFAULT_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const DEFAULT_TILE_ATTRIBUTION = "© OpenStreetMap contributors";
+const DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json";
+const MAPLIBRE_VERSION = "5";
 let mapInstanceCounter = 0;
 let configSchemaRegistration: Promise<void> | undefined;
 
@@ -63,6 +65,15 @@ function escapeHtml(value: string): string {
 		.replaceAll(">", "&gt;")
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
+}
+
+function decodeXmlEntities(value: string): string {
+	return value
+		.replaceAll("&amp;", "&")
+		.replaceAll("&lt;", "<")
+		.replaceAll("&gt;", ">")
+		.replaceAll("&quot;", '"')
+		.replaceAll("&apos;", "'");
 }
 
 function buildError(message: string): { html: string; script: string } {
@@ -115,7 +126,6 @@ function parseLegacyConfig(content: string): RawMapConfig {
 			try {
 				config.center = JSON.parse(value);
 			} catch {
-				// Leave invalid legacy center input alone so normalization reports it cleanly.
 				config.center = value;
 			}
 		}
@@ -191,10 +201,12 @@ function normalizeMarkers(value: unknown): MarkerConfig[] {
 			);
 		}
 
-		const label = asString(rawMarker.label);
-		const popup = asString(rawMarker.popup);
-
-		return { lat, lon, label, popup };
+		return {
+			lat,
+			lon,
+			label: asString(rawMarker.label),
+			popup: asString(rawMarker.popup),
+		};
 	});
 }
 
@@ -243,6 +255,51 @@ function extractCoordinates(
 	}
 
 	return coordinates;
+}
+
+function extractWaypoints(gpxContent: string): MarkerConfig[] {
+	const waypoints = gpxContent.matchAll(
+		/<wpt\b[^>]*?lat=["']([^"']+)["'][^>]*?lon=["']([^"']+)["'][^>]*?>([\s\S]*?)<\/wpt>/gi,
+	);
+
+	const markers: MarkerConfig[] = [];
+	for (const match of waypoints) {
+		const lat = Number.parseFloat(match[1]);
+		const lon = Number.parseFloat(match[2]);
+		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+			continue;
+		}
+
+		const nameMatch = match[3].match(/<name\b[^>]*>([\s\S]*?)<\/name>/i);
+		const popup = nameMatch
+			? decodeXmlEntities(nameMatch[1].trim())
+			: "Waypoint";
+		markers.push({ lat, lon, popup });
+	}
+
+	return markers;
+}
+
+function createLineFeature(trackPoints: Coordinate[]): GeoJsonData | undefined {
+	if (trackPoints.length < 2) {
+		return undefined;
+	}
+
+	return {
+		type: "FeatureCollection",
+		features: [
+			{
+				type: "Feature",
+				properties: {
+					source: "gpx-track",
+				},
+				geometry: {
+					type: "LineString",
+					coordinates: trackPoints.map(([lat, lon]) => [lon, lat]),
+				},
+			},
+		],
+	};
 }
 
 function hasGpxRoot(gpxContent: string): boolean {
@@ -306,19 +363,12 @@ function sourcePathCandidates(sourcePath: string): string[] {
 }
 
 async function readSourceFile(sourcePath: string): Promise<string> {
-	let lastError: unknown;
-
 	for (const candidate of sourcePathCandidates(sourcePath)) {
 		try {
 			return new TextDecoder().decode(await space.readFile(candidate));
-		} catch (error) {
-			lastError = error;
+		} catch {
+			//
 		}
-	}
-
-	const message = lastError instanceof Error ? lastError.message : "";
-	if (message) {
-		throw new Error(`Map Error: File not found: ${sourcePath}`);
 	}
 
 	throw new Error(`Map Error: File not found: ${sourcePath}`);
@@ -336,16 +386,44 @@ async function loadSourceData(sourcePath: string): Promise<MapSourceData> {
 		}
 
 		const trackPoints = extractCoordinates(content, "trkpt");
-		const waypoints = extractCoordinates(content, "wpt");
+		const waypoints = extractWaypoints(content);
 		if (trackPoints.length === 0 && waypoints.length === 0) {
 			throw new Error(
 				`GPX Map Error: No usable trackpoints or waypoints found in ${sourcePath}`,
 			);
 		}
 
+		if (trackPoints.length > 0) {
+			const markers: MarkerConfig[] = [];
+			if (trackPoints.length === 1) {
+				markers.push({
+					lat: trackPoints[0][0],
+					lon: trackPoints[0][1],
+					popup: "Track point",
+				});
+			} else {
+				markers.push({
+					lat: trackPoints[0][0],
+					lon: trackPoints[0][1],
+					popup: "Start",
+				});
+				markers.push({
+					lat: trackPoints[trackPoints.length - 1][0],
+					lon: trackPoints[trackPoints.length - 1][1],
+					popup: "End",
+				});
+			}
+
+			return {
+				kind: "gpx",
+				trackGeoJson: createLineFeature(trackPoints),
+				markers,
+			};
+		}
+
 		return {
 			kind: "gpx",
-			content,
+			markers: waypoints,
 		};
 	}
 
@@ -379,7 +457,6 @@ function buildStarterBlock(): string {
 \`\`\``;
 }
 
-// Command: Insert a generic map widget at cursor
 export async function insertGPXMap(): Promise<void> {
 	const selection = await editor.getSelection();
 	const { from, to } = selection;
@@ -389,15 +466,10 @@ export async function insertGPXMap(): Promise<void> {
 async function ensureConfigSchemaDefined(): Promise<void> {
 	if (!configSchemaRegistration) {
 		configSchemaRegistration = Promise.all([
-			globalConfig.define("gpxmap.tileUrl", {
+			globalConfig.define("gpxmap.styleUrl", {
 				type: "string",
-				default: DEFAULT_TILE_URL,
-				description: "Leaflet tile URL template used by gpxmap.",
-			}),
-			globalConfig.define("gpxmap.tileAttribution", {
-				type: "string",
-				default: DEFAULT_TILE_ATTRIBUTION,
-				description: "Leaflet attribution text used by gpxmap.",
+				default: DEFAULT_STYLE_URL,
+				description: "MapLibre style URL used by gpxmap.",
 			}),
 		]).then(() => undefined);
 	}
@@ -405,25 +477,16 @@ async function ensureConfigSchemaDefined(): Promise<void> {
 	await configSchemaRegistration;
 }
 
-async function loadTileConfig(): Promise<{
-	tileUrl: string;
-	tileAttribution: string;
-}> {
+async function loadStyleConfig(): Promise<{ styleUrl: string }> {
 	await ensureConfigSchemaDefined();
 
-	const configuredTileUrl = await globalConfig.get(
-		"gpxmap.tileUrl",
-		DEFAULT_TILE_URL,
-	);
-	const configuredTileAttribution = await globalConfig.get(
-		"gpxmap.tileAttribution",
-		DEFAULT_TILE_ATTRIBUTION,
+	const configuredStyleUrl = await globalConfig.get(
+		"gpxmap.styleUrl",
+		DEFAULT_STYLE_URL,
 	);
 
 	return {
-		tileUrl: asString(configuredTileUrl) || DEFAULT_TILE_URL,
-		tileAttribution:
-			asString(configuredTileAttribution) || DEFAULT_TILE_ATTRIBUTION,
+		styleUrl: asString(configuredStyleUrl) || DEFAULT_STYLE_URL,
 	};
 }
 
@@ -432,41 +495,43 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
     (function() {
       const mapId = ${JSON.stringify(mapId)};
       const payload = ${JSON.stringify(payload)};
-      const globalKey = "__gpxMapLeafletLoader";
+      const globalKey = "__gpxMapMapLibreLoader";
       const mapStoreKey = "__gpxMapInstances";
+      const cssHref = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css";
+      const scriptSrc = "https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js";
 
-      function loadLeaflet() {
+      function loadMapLibre() {
         if (globalThis[globalKey]) {
           return globalThis[globalKey];
         }
 
         globalThis[globalKey] = new Promise((resolve, reject) => {
-          const existingStylesheet = document.querySelector('link[data-gpxmap-leaflet="true"]');
+          const existingStylesheet = document.querySelector('link[data-gpxmap-maplibre="true"]');
           if (!existingStylesheet) {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
-            link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-            link.setAttribute('data-gpxmap-leaflet', 'true');
+            link.href = cssHref;
+            link.setAttribute('data-gpxmap-maplibre', 'true');
             document.head.appendChild(link);
           }
 
-          if (typeof globalThis.L !== 'undefined') {
-            resolve(globalThis.L);
+          if (typeof globalThis.maplibregl !== 'undefined') {
+            resolve(globalThis.maplibregl);
             return;
           }
 
-          const existingScript = document.querySelector('script[data-gpxmap-leaflet="true"]');
+          const existingScript = document.querySelector('script[data-gpxmap-maplibre="true"]');
           if (existingScript) {
-            existingScript.addEventListener('load', () => resolve(globalThis.L), { once: true });
-            existingScript.addEventListener('error', () => reject(new Error('Failed to load Leaflet.')), { once: true });
+            existingScript.addEventListener('load', () => resolve(globalThis.maplibregl), { once: true });
+            existingScript.addEventListener('error', () => reject(new Error('Failed to load MapLibre GL JS.')), { once: true });
             return;
           }
 
           const script = document.createElement('script');
-          script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-          script.setAttribute('data-gpxmap-leaflet', 'true');
-          script.onload = () => resolve(globalThis.L);
-          script.onerror = () => reject(new Error('Failed to load Leaflet.'));
+          script.src = scriptSrc;
+          script.setAttribute('data-gpxmap-maplibre', 'true');
+          script.onload = () => resolve(globalThis.maplibregl);
+          script.onerror = () => reject(new Error('Failed to load MapLibre GL JS.'));
           document.head.appendChild(script);
         });
 
@@ -490,179 +555,310 @@ function createMapScript(payload: RenderPayload, mapId: string): string {
           '</pre>';
       }
 
-      function parseCoordinates(doc, selector) {
-        return Array.from(doc.querySelectorAll(selector))
-          .map((point) => {
-            const lat = Number.parseFloat(point.getAttribute('lat') || '');
-            const lon = Number.parseFloat(point.getAttribute('lon') || '');
-            return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
-          })
-          .filter(Boolean);
+      function toLngLat(lat, lon) {
+        return [lon, lat];
       }
 
-      function parseWaypoints(doc) {
-        return Array.from(doc.querySelectorAll('wpt'))
-          .map((point) => {
-            const lat = Number.parseFloat(point.getAttribute('lat') || '');
-            const lon = Number.parseFloat(point.getAttribute('lon') || '');
-            if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-              return null;
-            }
+      function extractFeaturePopupText(feature) {
+        const props = feature && feature.properties && typeof feature.properties === 'object'
+          ? feature.properties
+          : null;
 
-            const nameNode = point.querySelector('name');
-            return {
-              coordinate: [lat, lon],
-              name: nameNode && nameNode.textContent ? nameNode.textContent : 'Waypoint'
-            };
-          })
-          .filter(Boolean);
+        if (!props) {
+          return null;
+        }
+
+        return props.popup || props.name || null;
       }
 
-      function bindPopupIfPresent(layer, text) {
-        if (text) {
-          layer.bindPopup(String(text));
+      function collectLngLatCoordinates(input, bucket) {
+        if (!Array.isArray(input)) {
+          return;
+        }
+
+        if (input.length >= 2 && typeof input[0] === 'number' && typeof input[1] === 'number') {
+          bucket.push([input[0], input[1]]);
+          return;
+        }
+
+        input.forEach((item) => collectLngLatCoordinates(item, bucket));
+      }
+
+      function collectGeoJsonLngLats(geojson) {
+        const points = [];
+
+        function visit(node) {
+          if (!node || typeof node !== 'object') {
+            return;
+          }
+
+          switch (node.type) {
+            case 'FeatureCollection':
+              (node.features || []).forEach(visit);
+              return;
+            case 'Feature':
+              visit(node.geometry);
+              return;
+            case 'GeometryCollection':
+              (node.geometries || []).forEach(visit);
+              return;
+            case 'Point':
+            case 'MultiPoint':
+            case 'LineString':
+            case 'MultiLineString':
+            case 'Polygon':
+            case 'MultiPolygon':
+              collectLngLatCoordinates(node.coordinates, points);
+              return;
+          }
+        }
+
+        visit(geojson);
+        return points;
+      }
+
+      function addMarker(maplibregl, map, markers, fitPoints, markerStore) {
+        markers.forEach((marker) => {
+          const instance = new maplibregl.Marker()
+            .setLngLat(toLngLat(marker.lat, marker.lon));
+
+          if (marker.popup || marker.label) {
+            instance.setPopup(
+              new maplibregl.Popup({ offset: 25 }).setText(String(marker.popup || marker.label))
+            );
+          }
+
+          instance.addTo(map);
+          markerStore.push(instance);
+          fitPoints.push(toLngLat(marker.lat, marker.lon));
+        });
+      }
+
+      function registerPopupHandler(maplibregl, map, layerId) {
+        map.on('click', layerId, (event) => {
+          const feature = event.features && event.features[0];
+          const popupText = extractFeaturePopupText(feature);
+          if (!popupText) {
+            return;
+          }
+
+          new maplibregl.Popup()
+            .setLngLat(event.lngLat)
+            .setText(String(popupText))
+            .addTo(map);
+        });
+
+        map.on('mouseenter', layerId, () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+
+        map.on('mouseleave', layerId, () => {
+          map.getCanvas().style.cursor = '';
+        });
+      }
+
+      function addGeoJsonLayers(maplibregl, map, sourceId, data, layerPrefix, fitPoints) {
+        const coordinates = collectGeoJsonLngLats(data);
+        if (coordinates.length === 0) {
+          throw new Error('GeoJSON Error: No renderable features found.');
+        }
+
+        map.addSource(sourceId, {
+          type: 'geojson',
+          data,
+        });
+
+        const fillLayerId = layerPrefix + '-fill';
+        const lineLayerId = layerPrefix + '-line';
+        const pointLayerId = layerPrefix + '-point';
+
+        map.addLayer({
+          id: fillLayerId,
+          type: 'fill',
+          source: sourceId,
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'fill-color': '#3b82f6',
+            'fill-opacity': 0.18
+          }
+        });
+
+        map.addLayer({
+          id: lineLayerId,
+          type: 'line',
+          source: sourceId,
+          paint: {
+            'line-color': '#2563eb',
+            'line-width': 3,
+            'line-opacity': 0.9
+          }
+        });
+
+        map.addLayer({
+          id: pointLayerId,
+          type: 'circle',
+          source: sourceId,
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-radius': 6,
+            'circle-color': '#dc2626',
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2
+          }
+        });
+
+        registerPopupHandler(maplibregl, map, fillLayerId);
+        registerPopupHandler(maplibregl, map, lineLayerId);
+        registerPopupHandler(maplibregl, map, pointLayerId);
+
+        coordinates.forEach((coordinate) => fitPoints.push(coordinate));
+      }
+
+      function cleanupExistingInstance() {
+        if (!globalThis[mapStoreKey]) {
+          globalThis[mapStoreKey] = {};
+        }
+
+        const existing = globalThis[mapStoreKey][mapId];
+        if (!existing) {
+          return;
+        }
+
+        (existing.markers || []).forEach((marker) => marker.remove());
+        if (existing.map) {
+          existing.map.remove();
         }
       }
 
-      function initMap() {
+      function initMap(maplibregl) {
         const element = document.getElementById(mapId);
         if (!element) {
           return;
         }
 
-        if (!globalThis[mapStoreKey]) {
-          globalThis[mapStoreKey] = {};
-        }
-
-        const existingMap = globalThis[mapStoreKey][mapId];
-        if (existingMap) {
-          existingMap.remove();
-        }
+        cleanupExistingInstance();
 
         const config = payload.config;
         const hasExplicitCenter = Array.isArray(config.center);
-        const initialCenter = hasExplicitCenter ? config.center : [0, 0];
+        const initialCenter = hasExplicitCenter
+          ? toLngLat(config.center[0], config.center[1])
+          : [0, 0];
         const initialZoom = hasExplicitCenter && typeof config.zoom === 'number'
           ? config.zoom
-          : ${DEFAULT_ZOOM};
+          : 1;
 
-        const map = L.map(mapId).setView(initialCenter, initialZoom);
-        globalThis[mapStoreKey][mapId] = map;
-
-        L.tileLayer(payload.tileUrl, {
-          attribution: payload.tileAttribution
-        }).addTo(map);
-
-        const fitCoordinates = [];
-
-        function addFitCoordinate(coordinate) {
-          fitCoordinates.push(coordinate);
-        }
-
-        function addBounds(bounds) {
-          if (!bounds || !bounds.isValid()) {
-            return;
-          }
-
-          const southWest = bounds.getSouthWest();
-          const northEast = bounds.getNorthEast();
-          addFitCoordinate([southWest.lat, southWest.lng]);
-          addFitCoordinate([northEast.lat, northEast.lng]);
-        }
-
-        if (payload.sourceData && payload.sourceData.kind === 'gpx') {
-          const parser = new DOMParser();
-          const gpx = parser.parseFromString(payload.sourceData.content, 'application/xml');
-          if (gpx.querySelector('parsererror')) {
-            renderError('GPX Map Error: Could not parse GPX XML.');
-            return;
-          }
-
-          const tracks = parseCoordinates(gpx, 'trkpt');
-          const waypoints = parseWaypoints(gpx);
-
-          if (tracks.length === 0 && waypoints.length === 0) {
-            renderError('GPX Map Error: No usable trackpoints or waypoints found.');
-            return;
-          }
-
-          if (tracks.length > 0) {
-            const polyline = L.polyline(tracks, {
-              color: '#0066cc',
-              weight: 4,
-              opacity: 0.8
-            }).addTo(map);
-            addBounds(polyline.getBounds());
-
-            L.marker(tracks[0], { title: 'Start' }).addTo(map).bindPopup('Start');
-            L.marker(tracks[tracks.length - 1], { title: 'End' }).addTo(map).bindPopup('End');
-          } else {
-            waypoints.forEach((point) => {
-              L.marker(point.coordinate).addTo(map).bindPopup(point.name);
-              addFitCoordinate(point.coordinate);
-            });
-          }
-        }
-
-        if (payload.sourceData && payload.sourceData.kind === 'geojson') {
-          const geoJsonLayer = L.geoJSON(payload.sourceData.data, {
-            onEachFeature: (feature, layer) => {
-              const props = feature && feature.properties && typeof feature.properties === 'object'
-                ? feature.properties
-                : null;
-              const popupText = props && (props.popup || props.name);
-              bindPopupIfPresent(layer, popupText);
-            }
-          }).addTo(map);
-          const geoJsonBounds = geoJsonLayer.getBounds();
-          if (!geoJsonBounds.isValid()) {
-            if (config.markers.length === 0) {
-              renderError('GeoJSON Error: No renderable features found.');
-              return;
-            }
-          } else {
-            addBounds(geoJsonBounds);
-          }
-        }
-
-        config.markers.forEach((marker) => {
-          const layer = L.marker([marker.lat, marker.lon]).addTo(map);
-          bindPopupIfPresent(layer, marker.popup || marker.label);
-          addFitCoordinate([marker.lat, marker.lon]);
+        const map = new maplibregl.Map({
+          container: mapId,
+          style: payload.styleUrl,
+          center: initialCenter,
+          zoom: initialZoom
         });
 
-        if (hasExplicitCenter) {
-          map.setView(config.center, typeof config.zoom === 'number' ? config.zoom : ${DEFAULT_ZOOM});
-          return;
-        }
+        const markerStore = [];
+        globalThis[mapStoreKey][mapId] = { map, markers: markerStore };
 
-        if (fitCoordinates.length === 0) {
-          return;
-        }
+        let initialized = false;
+        const initialErrorHandler = (event) => {
+          if (initialized) {
+            return;
+          }
 
-        const bounds = L.latLngBounds(fitCoordinates);
-        if (!bounds.isValid()) {
-          return;
-        }
+          const message = event && event.error && event.error.message
+            ? event.error.message
+            : 'Unable to load MapLibre style.';
+          renderError('Map Error: ' + message);
+          cleanupExistingInstance();
+        };
 
-        const southWest = bounds.getSouthWest();
-        const northEast = bounds.getNorthEast();
-        if (southWest.lat === northEast.lat && southWest.lng === northEast.lng) {
-          map.setView([southWest.lat, southWest.lng], ${DEFAULT_ZOOM});
-          return;
-        }
+        map.on('error', initialErrorHandler);
 
-        map.fitBounds(bounds, { padding: [20, 20] });
+        map.once('load', () => {
+          initialized = true;
+          map.off('error', initialErrorHandler);
+
+          try {
+            const fitPoints = [];
+
+            if (payload.sourceData && payload.sourceData.kind === 'gpx') {
+              if (payload.sourceData.trackGeoJson) {
+                addGeoJsonLayers(
+                  maplibregl,
+                  map,
+                  mapId + '-gpx-source',
+                  payload.sourceData.trackGeoJson,
+                  mapId + '-gpx',
+                  fitPoints
+                );
+              }
+
+              addMarker(
+                maplibregl,
+                map,
+                payload.sourceData.markers,
+                fitPoints,
+                markerStore
+              );
+            }
+
+            if (payload.sourceData && payload.sourceData.kind === 'geojson') {
+              addGeoJsonLayers(
+                maplibregl,
+                map,
+                mapId + '-geojson-source',
+                payload.sourceData.data,
+                mapId + '-geojson',
+                fitPoints
+              );
+            }
+
+            addMarker(maplibregl, map, config.markers, fitPoints, markerStore);
+
+            if (hasExplicitCenter) {
+              map.jumpTo({
+                center: toLngLat(config.center[0], config.center[1]),
+                zoom: typeof config.zoom === 'number' ? config.zoom : ${DEFAULT_ZOOM}
+              });
+              return;
+            }
+
+            if (fitPoints.length === 0) {
+              return;
+            }
+
+            const bounds = fitPoints.reduce(
+              (acc, point) => acc.extend(point),
+              new maplibregl.LngLatBounds(fitPoints[0], fitPoints[0])
+            );
+
+            const southWest = bounds.getSouthWest();
+            const northEast = bounds.getNorthEast();
+            if (southWest.lng === northEast.lng && southWest.lat === northEast.lat) {
+              map.jumpTo({
+                center: [southWest.lng, southWest.lat],
+                zoom: ${DEFAULT_ZOOM}
+              });
+              return;
+            }
+
+            map.fitBounds(bounds, {
+              padding: 40,
+              duration: 0
+            });
+          } catch (error) {
+            const message = error && error.message ? error.message : 'Unable to render map data.';
+            renderError('Map Error: ' + message);
+            cleanupExistingInstance();
+          }
+        });
       }
 
-      loadLeaflet().then(initMap).catch((error) => {
+      loadMapLibre().then(initMap).catch((error) => {
         renderError('Map Error: ' + (error && error.message ? error.message : 'Unable to initialize map.'));
       });
     })();
   `;
 }
 
-// Code Widget: Renders the Leaflet map
 export async function renderGPXWidget(
 	widgetBody: string,
 ): Promise<{ html: string; script: string }> {
@@ -671,7 +867,7 @@ export async function renderGPXWidget(
 		const sourceData = config.source
 			? await loadSourceData(config.source)
 			: undefined;
-		const tileConfig = await loadTileConfig();
+		const styleConfig = await loadStyleConfig();
 
 		if (!sourceData && config.markers.length === 0 && !config.center) {
 			return buildError(
@@ -680,11 +876,11 @@ export async function renderGPXWidget(
 		}
 
 		const mapId = createMapId();
-		const html = `<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`;
+		const html = `<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;"></div>`;
 
 		return {
 			html,
-			script: createMapScript({ config, sourceData, ...tileConfig }, mapId),
+			script: createMapScript({ config, sourceData, ...styleConfig }, mapId),
 		};
 	} catch (error) {
 		const message =
@@ -693,7 +889,6 @@ export async function renderGPXWidget(
 	}
 }
 
-// Slash command for quick insertion
 export function gpxSlashComplete() {
 	return {
 		options: [

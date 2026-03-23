@@ -2,7 +2,7 @@
   "name": "silverbullet-plug-gpxmap",
   "version": "0.1.0",
   "private": true,
-  "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with Leaflet",
+  "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with MapLibre GL JS",
   "scripts": {
     "build": "npx plug-compile gpxmap.yaml"
   },
