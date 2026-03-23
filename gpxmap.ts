@@ -1,45 +1,51 @@
 import { editor, space } from "@silverbulletmd/silverbullet/syscalls";
 
-type WidgetConfig = {
-	url?: string;
-	height?: string;
-};
-
 type Coordinate = [number, number];
 
-const DEFAULT_HEIGHT = "400px";
-let mapInstanceCounter = 0;
+type RawMapConfig = {
+	source?: unknown;
+	url?: unknown;
+	height?: unknown;
+	center?: unknown;
+	zoom?: unknown;
+	markers?: unknown;
+};
 
-function parseWidgetConfig(content: string): WidgetConfig {
-	const config: WidgetConfig = {};
+type MarkerConfig = {
+	lat: number;
+	lon: number;
+	label?: string;
+	popup?: string;
+};
 
-	for (const line of content.split(/\r?\n/)) {
-		const trimmed = line.trim();
-		if (!trimmed) {
-			continue;
-		}
+type MapConfig = {
+	source?: string;
+	height: string;
+	center?: Coordinate;
+	zoom?: number;
+	markers: MarkerConfig[];
+};
 
-		const separatorIndex = trimmed.indexOf(":");
-		if (separatorIndex === -1) {
-			continue;
-		}
+type GeoJsonData = Record<string, unknown>;
 
-		const key = trimmed.slice(0, separatorIndex).trim().toLowerCase();
-		const value = trimmed.slice(separatorIndex + 1).trim();
-
-		if (!value) {
-			continue;
-		}
-
-		if (key === "url") {
-			config.url = value;
-		} else if (key === "height") {
-			config.height = value;
-		}
+type MapSourceData =
+	| {
+		kind: "gpx";
+		content: string;
 	}
+	| {
+		kind: "geojson";
+		data: GeoJsonData;
+	};
 
-	return config;
-}
+type RenderPayload = {
+	config: MapConfig;
+	sourceData?: MapSourceData;
+};
+
+const DEFAULT_HEIGHT = "400px";
+const DEFAULT_ZOOM = 13;
+let mapInstanceCounter = 0;
 
 function escapeHtml(value: string): string {
 	return value
@@ -73,6 +79,138 @@ function createMapId(): string {
 	return `gpx-map-${mapInstanceCounter}-${randomPart}`;
 }
 
+function parseLegacyConfig(content: string): RawMapConfig {
+	const config: RawMapConfig = {};
+
+	for (const line of content.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) {
+			continue;
+		}
+
+		const separatorIndex = trimmed.indexOf(":");
+		if (separatorIndex === -1) {
+			continue;
+		}
+
+		const key = trimmed.slice(0, separatorIndex).trim().toLowerCase();
+		const value = trimmed.slice(separatorIndex + 1).trim();
+		if (!value) {
+			continue;
+		}
+
+		if (key === "source" || key === "url" || key === "height") {
+			config[key] = value;
+		} else if (key === "zoom") {
+			config.zoom = Number.parseFloat(value);
+		} else if (key === "center") {
+			try {
+				config.center = JSON.parse(value);
+			} catch {
+				// Leave invalid legacy center input alone so normalization reports it cleanly.
+				config.center = value;
+			}
+		}
+	}
+
+	return config;
+}
+
+function parseWidgetConfig(content: string): RawMapConfig {
+	const trimmed = content.trim();
+	if (!trimmed) {
+		return {};
+	}
+
+	if (trimmed.startsWith("{")) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(trimmed);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown JSON parse error.";
+			throw new Error(`Map config must be valid JSON: ${message}`);
+		}
+
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error("Map config JSON must be an object.");
+		}
+
+		return parsed as RawMapConfig;
+	}
+
+	return parseLegacyConfig(content);
+}
+
+function asString(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asCoordinate(value: unknown): Coordinate | undefined {
+	if (!Array.isArray(value) || value.length !== 2) {
+		return undefined;
+	}
+
+	const lat = Number(value[0]);
+	const lon = Number(value[1]);
+	if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+		return undefined;
+	}
+
+	return [lat, lon];
+}
+
+function normalizeMarkers(value: unknown): MarkerConfig[] {
+	if (value === undefined) {
+		return [];
+	}
+
+	if (!Array.isArray(value)) {
+		throw new Error("`markers` must be an array of marker objects.");
+	}
+
+	return value.map((marker, index) => {
+		if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+			throw new Error(`Marker ${index + 1} must be an object.`);
+		}
+
+		const rawMarker = marker as Record<string, unknown>;
+		const lat = Number(rawMarker.lat);
+		const lon = Number(rawMarker.lon);
+		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+			throw new Error(`Marker ${index + 1} must include numeric \`lat\` and \`lon\`.`);
+		}
+
+		const label = asString(rawMarker.label);
+		const popup = asString(rawMarker.popup);
+
+		return { lat, lon, label, popup };
+	});
+}
+
+function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
+	const source = asString(rawConfig.source) || asString(rawConfig.url);
+	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
+	const center = rawConfig.center === undefined
+		? undefined
+		: asCoordinate(rawConfig.center);
+	if (rawConfig.center !== undefined && !center) {
+		throw new Error("`center` must be a JSON array like [lat, lon].");
+	}
+
+	const zoom = rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
+	if (rawConfig.zoom !== undefined && !Number.isFinite(zoom)) {
+		throw new Error("`zoom` must be a number.");
+	}
+
+	return {
+		source,
+		height,
+		center,
+		zoom,
+		markers: normalizeMarkers(rawConfig.markers),
+	};
+}
+
 function extractCoordinates(
 	gpxContent: string,
 	tagName: "trkpt" | "wpt",
@@ -96,83 +234,115 @@ function extractCoordinates(
 	return coordinates;
 }
 
-function extractWaypointCount(gpxContent: string): number {
-	return extractCoordinates(gpxContent, "wpt").length;
+function hasGpxRoot(gpxContent: string): boolean {
+	return /<(?:\w+:)?gpx\b/i.test(gpxContent);
 }
 
-function hasXmlParseError(gpxContent: string): boolean {
-	return !/<(?:\w+:)?gpx\b/i.test(gpxContent);
+function isSupportedGeoJsonType(type: unknown): boolean {
+	return typeof type === "string" && [
+		"Feature",
+		"FeatureCollection",
+		"Point",
+		"MultiPoint",
+		"LineString",
+		"MultiLineString",
+		"Polygon",
+		"MultiPolygon",
+		"GeometryCollection",
+	].includes(type);
 }
 
-// Command: Insert a GPX map widget at cursor
+function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(content);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown JSON parse error.";
+		throw new Error(`GeoJSON Error: Invalid JSON in ${sourcePath}: ${message}`);
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error(`GeoJSON Error: ${sourcePath} must contain a GeoJSON object.`);
+	}
+
+	const geoJson = parsed as Record<string, unknown>;
+	if (!isSupportedGeoJsonType(geoJson.type)) {
+		throw new Error(`GeoJSON Error: Unsupported or missing GeoJSON type in ${sourcePath}.`);
+	}
+
+	return geoJson;
+}
+
+async function loadSourceData(sourcePath: string): Promise<MapSourceData> {
+	const fileExists = await space.fileExists(sourcePath);
+	if (!fileExists) {
+		throw new Error(`Map Error: File not found: ${sourcePath}`);
+	}
+
+	const content = new TextDecoder().decode(await space.readFile(sourcePath));
+	const lowerSource = sourcePath.toLowerCase();
+
+	if (lowerSource.endsWith(".gpx")) {
+		if (!hasGpxRoot(content)) {
+			throw new Error(`GPX Map Error: File is not valid GPX XML: ${sourcePath}`);
+		}
+
+		const trackPoints = extractCoordinates(content, "trkpt");
+		const waypoints = extractCoordinates(content, "wpt");
+		if (trackPoints.length === 0 && waypoints.length === 0) {
+			throw new Error(
+				`GPX Map Error: No usable trackpoints or waypoints found in ${sourcePath}`,
+			);
+		}
+
+		return {
+			kind: "gpx",
+			content,
+		};
+	}
+
+	if (lowerSource.endsWith(".geojson") || lowerSource.endsWith(".json")) {
+		return {
+			kind: "geojson",
+			data: parseGeoJson(content, sourcePath),
+		};
+	}
+
+	throw new Error(
+		`Map Error: Unsupported file type for ${sourcePath}. Use .gpx, .geojson, or .json.`,
+	);
+}
+
+function buildStarterBlock(): string {
+	return `\`\`\`gpxmap
+{
+  "height": "400px",
+  "source": "/path/to/data.gpx",
+  "center": [41.3874, 2.1686],
+  "zoom": 13,
+  "markers": [
+    {
+      "lat": 41.3874,
+      "lon": 2.1686,
+      "popup": "Example marker"
+    }
+  ]
+}
+\`\`\``;
+}
+
+// Command: Insert a generic map widget at cursor
 export async function insertGPXMap(): Promise<void> {
 	const selection = await editor.getSelection();
 	const { from, to } = selection;
-
-	const gpxPath = await editor.prompt(
-		"Enter GPX file path (e.g., /hikes/my-route.gpx):",
-		"",
-	);
-
-	if (!gpxPath?.trim()) {
-		return;
-	}
-
-	const height =
-		(await editor.prompt("Map height (default: 400px):", DEFAULT_HEIGHT)) ||
-		DEFAULT_HEIGHT;
-
-	const block = `\`\`\`gpxmap
-url: ${gpxPath.trim()}
-height: ${height.trim() || DEFAULT_HEIGHT}
-\`\`\``;
-
-	await editor.replaceRange(from, to, block);
+	await editor.replaceRange(from, to, buildStarterBlock());
 }
 
-// Code Widget: Renders the Leaflet map
-export async function renderGPXWidget(
-	widgetBody: string,
-): Promise<{ html: string; script: string }> {
-	const config = parseWidgetConfig(widgetBody);
-	const gpxPath = config.url;
-	const height = config.height || DEFAULT_HEIGHT;
-
-	if (!gpxPath) {
-		return buildError(
-			"GPX Map Error: No URL specified. Use: url: /path/to/file.gpx",
-		);
-	}
-
-	const fileExists = await space.fileExists(gpxPath);
-	if (!fileExists) {
-		return buildError(`GPX Map Error: File not found: ${gpxPath}`);
-	}
-
-	const gpxData = await space.readFile(gpxPath);
-	const gpxContent = new TextDecoder().decode(gpxData);
-
-	if (hasXmlParseError(gpxContent)) {
-		return buildError(`GPX Map Error: File is not valid GPX XML: ${gpxPath}`);
-	}
-
-	const trackPoints = extractCoordinates(gpxContent, "trkpt");
-	const waypointCount = extractWaypointCount(gpxContent);
-
-	if (trackPoints.length === 0 && waypointCount === 0) {
-		return buildError(
-			`GPX Map Error: No usable trackpoints or waypoints found in ${gpxPath}`,
-		);
-	}
-
-	const mapId = createMapId();
-	const html =
-		`<div id="${mapId}" style="height: ${escapeHtml(height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`;
-
-	const script = `
+function createMapScript(payload: RenderPayload, mapId: string): string {
+	return `
     (function() {
       const mapId = ${JSON.stringify(mapId)};
-      const gpxContent = ${JSON.stringify(gpxContent)};
+      const payload = ${JSON.stringify(payload)};
       const globalKey = "__gpxMapLeafletLoader";
       const mapStoreKey = "__gpxMapInstances";
 
@@ -259,24 +429,15 @@ export async function renderGPXWidget(
           .filter(Boolean);
       }
 
+      function bindPopupIfPresent(layer, text) {
+        if (text) {
+          layer.bindPopup(String(text));
+        }
+      }
+
       function initMap() {
         const element = document.getElementById(mapId);
         if (!element) {
-          return;
-        }
-
-        const parser = new DOMParser();
-        const gpx = parser.parseFromString(gpxContent, 'application/xml');
-        if (gpx.querySelector('parsererror')) {
-          renderError('GPX Map Error: Could not parse GPX XML.');
-          return;
-        }
-
-        const tracks = parseCoordinates(gpx, 'trkpt');
-        const waypoints = parseWaypoints(gpx);
-
-        if (tracks.length === 0 && waypoints.length === 0) {
-          renderError('GPX Map Error: No usable trackpoints or waypoints found.');
           return;
         }
 
@@ -289,39 +450,155 @@ export async function renderGPXWidget(
           existingMap.remove();
         }
 
-        const map = L.map(mapId).setView([0, 0], 13);
+        const config = payload.config;
+        const hasExplicitCenter = Array.isArray(config.center);
+        const initialCenter = hasExplicitCenter ? config.center : [0, 0];
+        const initialZoom = hasExplicitCenter && typeof config.zoom === 'number'
+          ? config.zoom
+          : ${DEFAULT_ZOOM};
+
+        const map = L.map(mapId).setView(initialCenter, initialZoom);
         globalThis[mapStoreKey][mapId] = map;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        if (tracks.length > 0) {
-          const polyline = L.polyline(tracks, {
-            color: '#0066cc',
-            weight: 4,
-            opacity: 0.8
-          }).addTo(map);
+        const fitCoordinates = [];
 
-          map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
-          L.marker(tracks[0], { title: 'Start' }).addTo(map).bindPopup('Start');
-          L.marker(tracks[tracks.length - 1], { title: 'End' }).addTo(map).bindPopup('End');
+        function addFitCoordinate(coordinate) {
+          fitCoordinates.push(coordinate);
+        }
+
+        function addBounds(bounds) {
+          if (!bounds || !bounds.isValid()) {
+            return;
+          }
+
+          const southWest = bounds.getSouthWest();
+          const northEast = bounds.getNorthEast();
+          addFitCoordinate([southWest.lat, southWest.lng]);
+          addFitCoordinate([northEast.lat, northEast.lng]);
+        }
+
+        if (payload.sourceData && payload.sourceData.kind === 'gpx') {
+          const parser = new DOMParser();
+          const gpx = parser.parseFromString(payload.sourceData.content, 'application/xml');
+          if (gpx.querySelector('parsererror')) {
+            renderError('GPX Map Error: Could not parse GPX XML.');
+            return;
+          }
+
+          const tracks = parseCoordinates(gpx, 'trkpt');
+          const waypoints = parseWaypoints(gpx);
+
+          if (tracks.length === 0 && waypoints.length === 0) {
+            renderError('GPX Map Error: No usable trackpoints or waypoints found.');
+            return;
+          }
+
+          if (tracks.length > 0) {
+            const polyline = L.polyline(tracks, {
+              color: '#0066cc',
+              weight: 4,
+              opacity: 0.8
+            }).addTo(map);
+            addBounds(polyline.getBounds());
+
+            L.marker(tracks[0], { title: 'Start' }).addTo(map).bindPopup('Start');
+            L.marker(tracks[tracks.length - 1], { title: 'End' }).addTo(map).bindPopup('End');
+          } else {
+            waypoints.forEach((point) => {
+              L.marker(point.coordinate).addTo(map).bindPopup(point.name);
+              addFitCoordinate(point.coordinate);
+            });
+          }
+        }
+
+        if (payload.sourceData && payload.sourceData.kind === 'geojson') {
+          const geoJsonLayer = L.geoJSON(payload.sourceData.data, {
+            onEachFeature: (feature, layer) => {
+              const props = feature && feature.properties && typeof feature.properties === 'object'
+                ? feature.properties
+                : null;
+              const popupText = props && (props.popup || props.name);
+              bindPopupIfPresent(layer, popupText);
+            }
+          }).addTo(map);
+          const geoJsonBounds = geoJsonLayer.getBounds();
+          if (!geoJsonBounds.isValid()) {
+            if (config.markers.length === 0) {
+              renderError('GeoJSON Error: No renderable features found.');
+              return;
+            }
+          } else {
+            addBounds(geoJsonBounds);
+          }
+        }
+
+        config.markers.forEach((marker) => {
+          const layer = L.marker([marker.lat, marker.lon]).addTo(map);
+          bindPopupIfPresent(layer, marker.popup || marker.label);
+          addFitCoordinate([marker.lat, marker.lon]);
+        });
+
+        if (hasExplicitCenter) {
+          map.setView(config.center, typeof config.zoom === 'number' ? config.zoom : ${DEFAULT_ZOOM});
           return;
         }
 
-        waypoints.forEach((point) => {
-          L.marker(point.coordinate).addTo(map).bindPopup(point.name);
-        });
-        map.fitBounds(L.latLngBounds(waypoints.map((point) => point.coordinate)), { padding: [20, 20] });
+        if (fitCoordinates.length === 0) {
+          return;
+        }
+
+        const bounds = L.latLngBounds(fitCoordinates);
+        if (!bounds.isValid()) {
+          return;
+        }
+
+        const southWest = bounds.getSouthWest();
+        const northEast = bounds.getNorthEast();
+        if (southWest.lat === northEast.lat && southWest.lng === northEast.lng) {
+          map.setView([southWest.lat, southWest.lng], ${DEFAULT_ZOOM});
+          return;
+        }
+
+        map.fitBounds(bounds, { padding: [20, 20] });
       }
 
       loadLeaflet().then(initMap).catch((error) => {
-        renderError('GPX Map Error: ' + (error && error.message ? error.message : 'Unable to initialize map.'));
+        renderError('Map Error: ' + (error && error.message ? error.message : 'Unable to initialize map.'));
       });
     })();
   `;
+}
 
-	return { html, script };
+// Code Widget: Renders the Leaflet map
+export async function renderGPXWidget(
+	widgetBody: string,
+): Promise<{ html: string; script: string }> {
+	try {
+		const config = normalizeConfig(parseWidgetConfig(widgetBody));
+		const sourceData = config.source ? await loadSourceData(config.source) : undefined;
+
+		if (!sourceData && config.markers.length === 0 && !config.center) {
+			return buildError(
+				"Map Error: Provide a source file, at least one marker, or a center coordinate.",
+			);
+		}
+
+		const mapId = createMapId();
+		const html =
+			`<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`;
+
+		return {
+			html,
+			script: createMapScript({ config, sourceData }, mapId),
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown map rendering error.";
+		return buildError(message);
+	}
 }
 
 // Slash command for quick insertion
@@ -330,7 +607,7 @@ export function gpxSlashComplete() {
 		options: [
 			{
 				label: "gpxmap",
-				detail: "Insert GPX map widget",
+				detail: "Insert generic map widget",
 				invoke: "gpxmap.insertGPXMap",
 			},
 		],

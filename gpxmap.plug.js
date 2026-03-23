@@ -1,10 +1,21 @@
-var K=Object.defineProperty;var x=(e,r)=>{for(var o in r)K(e,o,{get:r[o],enumerable:!0})};function D(e){let r=atob(e),o=r.length,n=new Uint8Array(o);for(let i=0;i<o;i++)n[i]=r.charCodeAt(i);return n}function h(e){typeof e=="string"&&(e=new TextEncoder().encode(e));let r="",o=e.byteLength;for(let n=0;n<o;n++)r+=String.fromCharCode(e[n]);return btoa(r)}var Ft=new Uint8Array(16),B=class{constructor(e="",r=1e3){this.prefix=e,this.maxCaptureSize=r,this.prefix=e,this.originalConsole={log:console.log.bind(console),info:console.info.bind(console),warn:console.warn.bind(console),error:console.error.bind(console),debug:console.debug.bind(console)},this.patchConsole()}originalConsole;logBuffer=[];patchConsole(){let e=r=>(...o)=>{let n=this.prefix?[this.prefix,...o]:o;this.originalConsole[r](...n),this.captureLog(r,o)};console.log=e("log"),console.info=e("info"),console.warn=e("warn"),console.error=e("error"),console.debug=e("debug")}captureLog(e,r){let o={level:e,timestamp:Date.now(),message:r.map(n=>{if(typeof n=="string")return n;try{return JSON.stringify(n)}catch{return String(n)}}).join(" ")};this.logBuffer.push(o),this.logBuffer.length>this.maxCaptureSize&&this.logBuffer.shift()}async postToServer(e,r){if(this.logBuffer.length>0){let n=[...this.logBuffer];this.logBuffer=[];try{if(!(await fetch(e,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(n.map(a=>({...a,source:r})))})).ok)throw new Error("Failed to post logs to server")}catch(i){console.warn("Could not post logs to server",i.message),this.logBuffer.unshift(...n)}}}},P;function O(e=""){return P=new B(e),P}var c=e=>{throw new Error("Not initialized yet")},f=typeof window>"u"&&typeof globalThis.WebSocketPair>"u",g=new Map,m=0;f&&(globalThis.syscall=async(e,...r)=>await new Promise((o,n)=>{m++,g.set(m,{resolve:o,reject:n}),c({type:"sys",id:m,name:e,args:r})}));function b(e,r,o){f&&(c=o,self.addEventListener("message",n=>{(async()=>{let i=n.data;switch(i.type){case"inv":{let a=e[i.name];if(!a)throw new Error(`Function not loaded: ${i.name}`);try{let s=await Promise.resolve(a(...i.args||[]));c({type:"invr",id:i.id,result:s})}catch(s){console.error("An exception was thrown as a result of invoking function",i.name,"error:",s.message),c({type:"invr",id:i.id,error:s.message})}}break;case"sysr":{let a=i.id,s=g.get(a);if(!s)throw Error("Invalid request id");g.delete(a),i.error?s.reject(new Error(i.error)):s.resolve(i.result)}break}})().catch(console.error)}),c({type:"manifest",manifest:r}),O(`[${r.name} plug]`))}async function R(e,r){if(typeof e!="string"){let o=new Uint8Array(await e.arrayBuffer()),n=o.length>0?h(o):void 0;r={method:e.method,headers:Object.fromEntries(e.headers.entries()),base64Body:n},e=e.url}return syscall("sandboxFetch.fetch",e,r)}globalThis.nativeFetch=globalThis.fetch;function G(){globalThis.fetch=async(e,r)=>{let o=r?.body?h(new Uint8Array(await new Response(r.body).arrayBuffer())):void 0,n=await R(e,r&&{method:r.method,headers:r.headers,base64Body:o});return new Response(n.base64Body?D(n.base64Body):null,{status:n.status,headers:n.headers})}}f&&G();var l={};x(l,{alert:()=>we,configureVimMode:()=>je,confirm:()=>ve,copyToClipboard:()=>Ke,deleteLine:()=>De,dispatch:()=>he,downloadFile:()=>ae,filterBox:()=>pe,flashNotification:()=>ce,fold:()=>Se,foldAll:()=>Ee,getCurrentEditor:()=>q,getCurrentPage:()=>j,getCurrentPageMeta:()=>N,getCurrentPath:()=>X,getCursor:()=>Q,getRecentlyOpenedPages:()=>W,getSelection:()=>V,getText:()=>I,getUiOption:()=>Ce,goHistory:()=>se,hidePanel:()=>de,insertAtCursor:()=>Pe,insertAtPos:()=>ge,invokeCommand:()=>_,isMobile:()=>Xe,moveCursor:()=>ye,moveCursorToLine:()=>xe,moveLineDown:()=>Re,moveLineUp:()=>Oe,navigate:()=>J,newWindow:()=>ie,openCommandPalette:()=>Z,openPageNavigator:()=>Y,openSearchPanel:()=>Ue,openUrl:()=>ne,prompt:()=>be,rebuildEditorState:()=>re,redo:()=>Le,reloadConfigAndCommands:()=>oe,reloadPage:()=>ee,reloadUI:()=>te,replaceRange:()=>fe,save:()=>z,sendMessage:()=>Ne,setSelection:()=>H,setText:()=>$,setUiOption:()=>Te,showPanel:()=>ue,showProgress:()=>me,toggleComment:()=>Be,toggleFold:()=>Ae,undo:()=>ke,unfold:()=>Me,unfoldAll:()=>Fe,uploadFile:()=>le,vimEx:()=>Ge});typeof globalThis.syscall>"u"&&(globalThis.syscall=()=>{throw new Error("Not implemented here")});function t(e,...r){return globalThis.syscall(e,...r)}function j(){return t("editor.getCurrentPage")}function N(){return t("editor.getCurrentPageMeta")}function X(){return t("editor.getCurrentPath")}function W(){return t("editor.getRecentlyOpenedPages")}function q(){return t("editor.getCurrentEditor")}function I(){return t("editor.getText")}function $(e,r=!1){return t("editor.setText",e,r)}function Q(){return t("editor.getCursor")}function V(){return t("editor.getSelection")}function H(e,r){return t("editor.setSelection",e,r)}function _(e,r){return t("editor.invokeCommand",e,r)}function z(){return t("editor.save")}function J(e,r=!1,o=!1){return t("editor.navigate",e,r,o)}function Y(e="page"){return t("editor.openPageNavigator",e)}function Z(){return t("editor.openCommandPalette")}function ee(){return t("editor.reloadPage")}function te(){return t("editor.reloadUI")}function re(){return t("editor.rebuildEditorState")}function oe(){return t("editor.reloadConfigAndCommands")}function ne(e,r=!1){return t("editor.openUrl",e,r)}function ie(){return t("editor.newWindow")}function se(e){return t("editor.goHistory",e)}function ae(e,r){return t("editor.downloadFile",e,r)}function le(e,r){return t("editor.uploadFile",e,r)}function ce(e,r="info"){return t("editor.flashNotification",e,r)}function pe(e,r,o="",n=""){return t("editor.filterBox",e,r,o,n)}function ue(e,r,o,n=""){return t("editor.showPanel",e,r,o,n)}function de(e){return t("editor.hidePanel",e)}function me(e,r){return t("editor.showProgress",e,r)}function ge(e,r){return t("editor.insertAtPos",e,r)}function fe(e,r,o){return t("editor.replaceRange",e,r,o)}function ye(e,r=!1){return t("editor.moveCursor",e,r)}function xe(e,r=1,o=!1){return t("editor.moveCursorToLine",e,r,o)}function Pe(e,r=!1,o=!1){return t("editor.insertAtCursor",e,r,o)}function he(e){return t("editor.dispatch",e)}function be(e,r=""){return t("editor.prompt",e,r)}function ve(e){return t("editor.confirm",e)}function we(e){return t("editor.alert",e)}function Ce(e){return t("editor.getUiOption",e)}function Te(e,r){return t("editor.setUiOption",e,r)}function Se(){return t("editor.fold")}function Me(){return t("editor.unfold")}function Ae(){return t("editor.toggleFold")}function Ee(){return t("editor.foldAll")}function Fe(){return t("editor.unfoldAll")}function ke(){return t("editor.undo")}function Le(){return t("editor.redo")}function Ue(){return t("editor.openSearchPanel")}function Ke(e){return t("editor.copyToClipboard",e)}function De(){return t("editor.deleteLine")}function Be(){return t("editor.toggleComment")}function Oe(){return t("editor.moveLineUp")}function Re(){return t("editor.moveLineDown")}function Ge(e){return t("editor.vimEx",e)}function je(){return t("editor.configureVimMode")}function Ne(e,r){return t("editor.sendMessage",e,r)}function Xe(){return t("editor.isMobile")}var p={};x(p,{deleteDocument:()=>tt,deleteFile:()=>lt,deletePage:()=>_e,fileExists:()=>ct,getDocumentMeta:()=>Ye,getFileMeta:()=>st,getPageMeta:()=>Ie,listDocuments:()=>Je,listFiles:()=>rt,listPages:()=>qe,listPlugs:()=>ze,pageExists:()=>$e,readDocument:()=>Ze,readFile:()=>ot,readFileWithMeta:()=>it,readPage:()=>Qe,readPageWithMeta:()=>Ve,readRef:()=>nt,writeDocument:()=>et,writeFile:()=>at,writePage:()=>He});function qe(){return t("space.listPages")}function Ie(e){return t("space.getPageMeta",e)}function $e(e){return t("space.pageExists",e)}function Qe(e){return t("space.readPage",e)}function Ve(e){return t("space.readPageWithMeta",e)}function He(e,r){return t("space.writePage",e,r)}function _e(e){return t("space.deletePage",e)}function ze(){return t("space.listPlugs")}function Je(){return t("space.listDocuments")}function Ye(e){return t("space.getDocumentMeta",e)}function Ze(e){return t("space.readDocument",e)}function et(e,r){return t("space.writeDocument",e,r)}function tt(e){return t("space.deleteDocument",e)}function rt(){return t("space.listFiles")}function ot(e){return t("space.readFile",e)}function nt(e){return t("space.readRef",e)}function it(e){return t("space.readFileWithMeta",e)}function st(e){return t("space.getFileMeta",e)}function at(e,r){return t("space.writeFile",e,r)}function lt(e){return t("space.deleteFile",e)}function ct(e){return t("space.fileExists",e)}var Xt=new Uint8Array(16);var d="400px",v=0;function Tt(e){let r={};for(let o of e.split(/\r?\n/)){let n=o.trim();if(!n)continue;let i=n.indexOf(":");if(i===-1)continue;let a=n.slice(0,i).trim().toLowerCase(),s=n.slice(i+1).trim();s&&(a==="url"?r.url=s:a==="height"&&(r.height=s))}return r}function w(e){return e.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;")}function u(e){return{html:`<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${w(e)}</pre>`,script:""}}function St(){v+=1;let e="";return typeof crypto<"u"&&"randomUUID"in crypto?e=crypto.randomUUID():e=Math.random().toString(36).slice(2,10),`gpx-map-${v}-${e}`}function C(e,r){let o=e.matchAll(new RegExp(`<${r}\\b[^>]*?lat=["']([^"']+)["'][^>]*?lon=["']([^"']+)["'][^>]*?>`,"gi")),n=[];for(let i of o){let a=Number.parseFloat(i[1]),s=Number.parseFloat(i[2]);Number.isFinite(a)&&Number.isFinite(s)&&n.push([a,s])}return n}function Mt(e){return C(e,"wpt").length}function At(e){return!/<(?:\w+:)?gpx\b/i.test(e)}async function T(){let e=await l.getSelection(),{from:r,to:o}=e,n=await l.prompt("Enter GPX file path (e.g., /hikes/my-route.gpx):","");if(!n?.trim())return;let i=await l.prompt("Map height (default: 400px):",d)||d,a=`\`\`\`gpxmap
-url: ${n.trim()}
-height: ${i.trim()||d}
-\`\`\``;await l.replaceRange(r,o,a)}async function S(e){let r=Tt(e),o=r.url,n=r.height||d;if(!o)return u("GPX Map Error: No URL specified. Use: url: /path/to/file.gpx");if(!await p.fileExists(o))return u(`GPX Map Error: File not found: ${o}`);let a=await p.readFile(o),s=new TextDecoder().decode(a);if(At(s))return u(`GPX Map Error: File is not valid GPX XML: ${o}`);let F=C(s,"trkpt"),k=Mt(s);if(F.length===0&&k===0)return u(`GPX Map Error: No usable trackpoints or waypoints found in ${o}`);let y=St(),L=`<div id="${y}" style="height: ${w(n)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`,U=`
+var F=Object.defineProperty;var y=(e,t)=>{for(var o in t)F(e,o,{get:t[o],enumerable:!0})};function L(e){let t=atob(e),o=t.length,n=new Uint8Array(o);for(let i=0;i<o;i++)n[i]=t.charCodeAt(i);return n}function h(e){typeof e=="string"&&(e=new TextEncoder().encode(e));let t="",o=e.byteLength;for(let n=0;n<o;n++)t+=String.fromCharCode(e[n]);return btoa(t)}var Kt=new Uint8Array(16),U=class{constructor(e="",t=1e3){this.prefix=e,this.maxCaptureSize=t,this.prefix=e,this.originalConsole={log:console.log.bind(console),info:console.info.bind(console),warn:console.warn.bind(console),error:console.error.bind(console),debug:console.debug.bind(console)},this.patchConsole()}originalConsole;logBuffer=[];patchConsole(){let e=t=>(...o)=>{let n=this.prefix?[this.prefix,...o]:o;this.originalConsole[t](...n),this.captureLog(t,o)};console.log=e("log"),console.info=e("info"),console.warn=e("warn"),console.error=e("error"),console.debug=e("debug")}captureLog(e,t){let o={level:e,timestamp:Date.now(),message:t.map(n=>{if(typeof n=="string")return n;try{return JSON.stringify(n)}catch{return String(n)}}).join(" ")};this.logBuffer.push(o),this.logBuffer.length>this.maxCaptureSize&&this.logBuffer.shift()}async postToServer(e,t){if(this.logBuffer.length>0){let n=[...this.logBuffer];this.logBuffer=[];try{if(!(await fetch(e,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(n.map(s=>({...s,source:t})))})).ok)throw new Error("Failed to post logs to server")}catch(i){console.warn("Could not post logs to server",i.message),this.logBuffer.unshift(...n)}}}},x;function D(e=""){return x=new U(e),x}var c=e=>{throw new Error("Not initialized yet")},g=typeof window>"u"&&typeof globalThis.WebSocketPair>"u",m=new Map,d=0;g&&(globalThis.syscall=async(e,...t)=>await new Promise((o,n)=>{d++,m.set(d,{resolve:o,reject:n}),c({type:"sys",id:d,name:e,args:t})}));function P(e,t,o){g&&(c=o,self.addEventListener("message",n=>{(async()=>{let i=n.data;switch(i.type){case"inv":{let s=e[i.name];if(!s)throw new Error(`Function not loaded: ${i.name}`);try{let a=await Promise.resolve(s(...i.args||[]));c({type:"invr",id:i.id,result:a})}catch(a){console.error("An exception was thrown as a result of invoking function",i.name,"error:",a.message),c({type:"invr",id:i.id,error:a.message})}}break;case"sysr":{let s=i.id,a=m.get(s);if(!a)throw Error("Invalid request id");m.delete(s),i.error?a.reject(new Error(i.error)):a.resolve(i.result)}break}})().catch(console.error)}),c({type:"manifest",manifest:t}),D(`[${t.name} plug]`))}async function N(e,t){if(typeof e!="string"){let o=new Uint8Array(await e.arrayBuffer()),n=o.length>0?h(o):void 0;t={method:e.method,headers:Object.fromEntries(e.headers.entries()),base64Body:n},e=e.url}return syscall("sandboxFetch.fetch",e,t)}globalThis.nativeFetch=globalThis.fetch;function K(){globalThis.fetch=async(e,t)=>{let o=t?.body?h(new Uint8Array(await new Response(t.body).arrayBuffer())):void 0,n=await N(e,t&&{method:t.method,headers:t.headers,base64Body:o});return new Response(n.base64Body?L(n.base64Body):null,{status:n.status,headers:n.headers})}}g&&K();var u={};y(u,{alert:()=>Pe,configureVimMode:()=>Oe,confirm:()=>he,copyToClipboard:()=>Fe,deleteLine:()=>Le,dispatch:()=>ye,downloadFile:()=>ne,filterBox:()=>ae,flashNotification:()=>se,fold:()=>ve,foldAll:()=>Me,getCurrentEditor:()=>G,getCurrentPage:()=>O,getCurrentPageMeta:()=>B,getCurrentPath:()=>R,getCursor:()=>$,getRecentlyOpenedPages:()=>j,getSelection:()=>I,getText:()=>W,getUiOption:()=>be,goHistory:()=>oe,hidePanel:()=>ue,insertAtCursor:()=>fe,insertAtPos:()=>pe,invokeCommand:()=>z,isMobile:()=>Re,moveCursor:()=>me,moveCursorToLine:()=>ge,moveLineDown:()=>Ne,moveLineUp:()=>De,navigate:()=>V,newWindow:()=>re,openCommandPalette:()=>H,openPageNavigator:()=>Q,openSearchPanel:()=>Ae,openUrl:()=>te,prompt:()=>xe,rebuildEditorState:()=>Y,redo:()=>Te,reloadConfigAndCommands:()=>ee,reloadPage:()=>_,reloadUI:()=>Z,replaceRange:()=>de,save:()=>X,sendMessage:()=>Be,setSelection:()=>q,setText:()=>J,setUiOption:()=>we,showPanel:()=>ce,showProgress:()=>le,toggleComment:()=>Ue,toggleFold:()=>Se,undo:()=>ke,unfold:()=>Ce,unfoldAll:()=>Ee,uploadFile:()=>ie,vimEx:()=>Ke});typeof globalThis.syscall>"u"&&(globalThis.syscall=()=>{throw new Error("Not implemented here")});function r(e,...t){return globalThis.syscall(e,...t)}function O(){return r("editor.getCurrentPage")}function B(){return r("editor.getCurrentPageMeta")}function R(){return r("editor.getCurrentPath")}function j(){return r("editor.getRecentlyOpenedPages")}function G(){return r("editor.getCurrentEditor")}function W(){return r("editor.getText")}function J(e,t=!1){return r("editor.setText",e,t)}function $(){return r("editor.getCursor")}function I(){return r("editor.getSelection")}function q(e,t){return r("editor.setSelection",e,t)}function z(e,t){return r("editor.invokeCommand",e,t)}function X(){return r("editor.save")}function V(e,t=!1,o=!1){return r("editor.navigate",e,t,o)}function Q(e="page"){return r("editor.openPageNavigator",e)}function H(){return r("editor.openCommandPalette")}function _(){return r("editor.reloadPage")}function Z(){return r("editor.reloadUI")}function Y(){return r("editor.rebuildEditorState")}function ee(){return r("editor.reloadConfigAndCommands")}function te(e,t=!1){return r("editor.openUrl",e,t)}function re(){return r("editor.newWindow")}function oe(e){return r("editor.goHistory",e)}function ne(e,t){return r("editor.downloadFile",e,t)}function ie(e,t){return r("editor.uploadFile",e,t)}function se(e,t="info"){return r("editor.flashNotification",e,t)}function ae(e,t,o="",n=""){return r("editor.filterBox",e,t,o,n)}function ce(e,t,o,n=""){return r("editor.showPanel",e,t,o,n)}function ue(e){return r("editor.hidePanel",e)}function le(e,t){return r("editor.showProgress",e,t)}function pe(e,t){return r("editor.insertAtPos",e,t)}function de(e,t,o){return r("editor.replaceRange",e,t,o)}function me(e,t=!1){return r("editor.moveCursor",e,t)}function ge(e,t=1,o=!1){return r("editor.moveCursorToLine",e,t,o)}function fe(e,t=!1,o=!1){return r("editor.insertAtCursor",e,t,o)}function ye(e){return r("editor.dispatch",e)}function xe(e,t=""){return r("editor.prompt",e,t)}function he(e){return r("editor.confirm",e)}function Pe(e){return r("editor.alert",e)}function be(e){return r("editor.getUiOption",e)}function we(e,t){return r("editor.setUiOption",e,t)}function ve(){return r("editor.fold")}function Ce(){return r("editor.unfold")}function Se(){return r("editor.toggleFold")}function Me(){return r("editor.foldAll")}function Ee(){return r("editor.unfoldAll")}function ke(){return r("editor.undo")}function Te(){return r("editor.redo")}function Ae(){return r("editor.openSearchPanel")}function Fe(e){return r("editor.copyToClipboard",e)}function Le(){return r("editor.deleteLine")}function Ue(){return r("editor.toggleComment")}function De(){return r("editor.moveLineUp")}function Ne(){return r("editor.moveLineDown")}function Ke(e){return r("editor.vimEx",e)}function Oe(){return r("editor.configureVimMode")}function Be(e,t){return r("editor.sendMessage",e,t)}function Re(){return r("editor.isMobile")}var l={};y(l,{deleteDocument:()=>Ze,deleteFile:()=>it,deletePage:()=>ze,fileExists:()=>st,getDocumentMeta:()=>Qe,getFileMeta:()=>ot,getPageMeta:()=>We,listDocuments:()=>Ve,listFiles:()=>Ye,listPages:()=>Ge,listPlugs:()=>Xe,pageExists:()=>Je,readDocument:()=>He,readFile:()=>et,readFileWithMeta:()=>rt,readPage:()=>$e,readPageWithMeta:()=>Ie,readRef:()=>tt,writeDocument:()=>_e,writeFile:()=>nt,writePage:()=>qe});function Ge(){return r("space.listPages")}function We(e){return r("space.getPageMeta",e)}function Je(e){return r("space.pageExists",e)}function $e(e){return r("space.readPage",e)}function Ie(e){return r("space.readPageWithMeta",e)}function qe(e,t){return r("space.writePage",e,t)}function ze(e){return r("space.deletePage",e)}function Xe(){return r("space.listPlugs")}function Ve(){return r("space.listDocuments")}function Qe(e){return r("space.getDocumentMeta",e)}function He(e){return r("space.readDocument",e)}function _e(e,t){return r("space.writeDocument",e,t)}function Ze(e){return r("space.deleteDocument",e)}function Ye(){return r("space.listFiles")}function et(e){return r("space.readFile",e)}function tt(e){return r("space.readRef",e)}function rt(e){return r("space.readFileWithMeta",e)}function ot(e){return r("space.getFileMeta",e)}function nt(e,t){return r("space.writeFile",e,t)}function it(e){return r("space.deleteFile",e)}function st(e){return r("space.fileExists",e)}var Xt=new Uint8Array(16);var wt="400px",f=13,b=0;function C(e){return e.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;")}function w(e){return{html:`<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${C(e)}</pre>`,script:""}}function vt(){b+=1;let e="";return typeof crypto<"u"&&"randomUUID"in crypto?e=crypto.randomUUID():e=Math.random().toString(36).slice(2,10),`gpx-map-${b}-${e}`}function Ct(e){let t={};for(let o of e.split(/\r?\n/)){let n=o.trim();if(!n)continue;let i=n.indexOf(":");if(i===-1)continue;let s=n.slice(0,i).trim().toLowerCase(),a=n.slice(i+1).trim();if(a){if(s==="source"||s==="url"||s==="height")t[s]=a;else if(s==="zoom")t.zoom=Number.parseFloat(a);else if(s==="center")try{t.center=JSON.parse(a)}catch{t.center=a}}}return t}function St(e){let t=e.trim();if(!t)return{};if(t.startsWith("{")){let o;try{o=JSON.parse(t)}catch(n){let i=n instanceof Error?n.message:"Unknown JSON parse error.";throw new Error(`Map config must be valid JSON: ${i}`)}if(!o||typeof o!="object"||Array.isArray(o))throw new Error("Map config JSON must be an object.");return o}return Ct(e)}function p(e){return typeof e=="string"&&e.trim()?e.trim():void 0}function Mt(e){if(!Array.isArray(e)||e.length!==2)return;let t=Number(e[0]),o=Number(e[1]);if(!(!Number.isFinite(t)||!Number.isFinite(o)))return[t,o]}function Et(e){if(e===void 0)return[];if(!Array.isArray(e))throw new Error("`markers` must be an array of marker objects.");return e.map((t,o)=>{if(!t||typeof t!="object"||Array.isArray(t))throw new Error(`Marker ${o+1} must be an object.`);let n=t,i=Number(n.lat),s=Number(n.lon);if(!Number.isFinite(i)||!Number.isFinite(s))throw new Error(`Marker ${o+1} must include numeric \`lat\` and \`lon\`.`);let a=p(n.label),A=p(n.popup);return{lat:i,lon:s,label:a,popup:A}})}function kt(e){let t=p(e.source)||p(e.url),o=p(e.height)||wt,n=e.center===void 0?void 0:Mt(e.center);if(e.center!==void 0&&!n)throw new Error("`center` must be a JSON array like [lat, lon].");let i=e.zoom===void 0?void 0:Number(e.zoom);if(e.zoom!==void 0&&!Number.isFinite(i))throw new Error("`zoom` must be a number.");return{source:t,height:o,center:n,zoom:i,markers:Et(e.markers)}}function v(e,t){let o=e.matchAll(new RegExp(`<${t}\\b[^>]*?lat=["']([^"']+)["'][^>]*?lon=["']([^"']+)["'][^>]*?>`,"gi")),n=[];for(let i of o){let s=Number.parseFloat(i[1]),a=Number.parseFloat(i[2]);Number.isFinite(s)&&Number.isFinite(a)&&n.push([s,a])}return n}function Tt(e){return/<(?:\w+:)?gpx\b/i.test(e)}function At(e){return typeof e=="string"&&["Feature","FeatureCollection","Point","MultiPoint","LineString","MultiLineString","Polygon","MultiPolygon","GeometryCollection"].includes(e)}function Ft(e,t){let o;try{o=JSON.parse(e)}catch(i){let s=i instanceof Error?i.message:"Unknown JSON parse error.";throw new Error(`GeoJSON Error: Invalid JSON in ${t}: ${s}`)}if(!o||typeof o!="object"||Array.isArray(o))throw new Error(`GeoJSON Error: ${t} must contain a GeoJSON object.`);let n=o;if(!At(n.type))throw new Error(`GeoJSON Error: Unsupported or missing GeoJSON type in ${t}.`);return n}async function Lt(e){if(!await l.fileExists(e))throw new Error(`Map Error: File not found: ${e}`);let o=new TextDecoder().decode(await l.readFile(e)),n=e.toLowerCase();if(n.endsWith(".gpx")){if(!Tt(o))throw new Error(`GPX Map Error: File is not valid GPX XML: ${e}`);let i=v(o,"trkpt"),s=v(o,"wpt");if(i.length===0&&s.length===0)throw new Error(`GPX Map Error: No usable trackpoints or waypoints found in ${e}`);return{kind:"gpx",content:o}}if(n.endsWith(".geojson")||n.endsWith(".json"))return{kind:"geojson",data:Ft(o,e)};throw new Error(`Map Error: Unsupported file type for ${e}. Use .gpx, .geojson, or .json.`)}function Ut(){return`\`\`\`gpxmap
+{
+  "height": "400px",
+  "source": "/path/to/data.gpx",
+  "center": [41.3874, 2.1686],
+  "zoom": 13,
+  "markers": [
+    {
+      "lat": 41.3874,
+      "lon": 2.1686,
+      "popup": "Example marker"
+    }
+  ]
+}
+\`\`\``}async function S(){let e=await u.getSelection(),{from:t,to:o}=e;await u.replaceRange(t,o,Ut())}function Dt(e,t){return`
     (function() {
-      const mapId = ${JSON.stringify(y)};
-      const gpxContent = ${JSON.stringify(s)};
+      const mapId = ${JSON.stringify(t)};
+      const payload = ${JSON.stringify(e)};
       const globalKey = "__gpxMapLeafletLoader";
       const mapStoreKey = "__gpxMapInstances";
 
@@ -91,24 +102,15 @@ height: ${i.trim()||d}
           .filter(Boolean);
       }
 
+      function bindPopupIfPresent(layer, text) {
+        if (text) {
+          layer.bindPopup(String(text));
+        }
+      }
+
       function initMap() {
         const element = document.getElementById(mapId);
         if (!element) {
-          return;
-        }
-
-        const parser = new DOMParser();
-        const gpx = parser.parseFromString(gpxContent, 'application/xml');
-        if (gpx.querySelector('parsererror')) {
-          renderError('GPX Map Error: Could not parse GPX XML.');
-          return;
-        }
-
-        const tracks = parseCoordinates(gpx, 'trkpt');
-        const waypoints = parseWaypoints(gpx);
-
-        if (tracks.length === 0 && waypoints.length === 0) {
-          renderError('GPX Map Error: No usable trackpoints or waypoints found.');
           return;
         }
 
@@ -121,35 +123,125 @@ height: ${i.trim()||d}
           existingMap.remove();
         }
 
-        const map = L.map(mapId).setView([0, 0], 13);
+        const config = payload.config;
+        const hasExplicitCenter = Array.isArray(config.center);
+        const initialCenter = hasExplicitCenter ? config.center : [0, 0];
+        const initialZoom = hasExplicitCenter && typeof config.zoom === 'number'
+          ? config.zoom
+          : ${f};
+
+        const map = L.map(mapId).setView(initialCenter, initialZoom);
         globalThis[mapStoreKey][mapId] = map;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '\xA9 OpenStreetMap contributors'
         }).addTo(map);
 
-        if (tracks.length > 0) {
-          const polyline = L.polyline(tracks, {
-            color: '#0066cc',
-            weight: 4,
-            opacity: 0.8
-          }).addTo(map);
+        const fitCoordinates = [];
 
-          map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
-          L.marker(tracks[0], { title: 'Start' }).addTo(map).bindPopup('Start');
-          L.marker(tracks[tracks.length - 1], { title: 'End' }).addTo(map).bindPopup('End');
+        function addFitCoordinate(coordinate) {
+          fitCoordinates.push(coordinate);
+        }
+
+        function addBounds(bounds) {
+          if (!bounds || !bounds.isValid()) {
+            return;
+          }
+
+          const southWest = bounds.getSouthWest();
+          const northEast = bounds.getNorthEast();
+          addFitCoordinate([southWest.lat, southWest.lng]);
+          addFitCoordinate([northEast.lat, northEast.lng]);
+        }
+
+        if (payload.sourceData && payload.sourceData.kind === 'gpx') {
+          const parser = new DOMParser();
+          const gpx = parser.parseFromString(payload.sourceData.content, 'application/xml');
+          if (gpx.querySelector('parsererror')) {
+            renderError('GPX Map Error: Could not parse GPX XML.');
+            return;
+          }
+
+          const tracks = parseCoordinates(gpx, 'trkpt');
+          const waypoints = parseWaypoints(gpx);
+
+          if (tracks.length === 0 && waypoints.length === 0) {
+            renderError('GPX Map Error: No usable trackpoints or waypoints found.');
+            return;
+          }
+
+          if (tracks.length > 0) {
+            const polyline = L.polyline(tracks, {
+              color: '#0066cc',
+              weight: 4,
+              opacity: 0.8
+            }).addTo(map);
+            addBounds(polyline.getBounds());
+
+            L.marker(tracks[0], { title: 'Start' }).addTo(map).bindPopup('Start');
+            L.marker(tracks[tracks.length - 1], { title: 'End' }).addTo(map).bindPopup('End');
+          } else {
+            waypoints.forEach((point) => {
+              L.marker(point.coordinate).addTo(map).bindPopup(point.name);
+              addFitCoordinate(point.coordinate);
+            });
+          }
+        }
+
+        if (payload.sourceData && payload.sourceData.kind === 'geojson') {
+          const geoJsonLayer = L.geoJSON(payload.sourceData.data, {
+            onEachFeature: (feature, layer) => {
+              const props = feature && feature.properties && typeof feature.properties === 'object'
+                ? feature.properties
+                : null;
+              const popupText = props && (props.popup || props.name);
+              bindPopupIfPresent(layer, popupText);
+            }
+          }).addTo(map);
+          const geoJsonBounds = geoJsonLayer.getBounds();
+          if (!geoJsonBounds.isValid()) {
+            if (config.markers.length === 0) {
+              renderError('GeoJSON Error: No renderable features found.');
+              return;
+            }
+          } else {
+            addBounds(geoJsonBounds);
+          }
+        }
+
+        config.markers.forEach((marker) => {
+          const layer = L.marker([marker.lat, marker.lon]).addTo(map);
+          bindPopupIfPresent(layer, marker.popup || marker.label);
+          addFitCoordinate([marker.lat, marker.lon]);
+        });
+
+        if (hasExplicitCenter) {
+          map.setView(config.center, typeof config.zoom === 'number' ? config.zoom : ${f});
           return;
         }
 
-        waypoints.forEach((point) => {
-          L.marker(point.coordinate).addTo(map).bindPopup(point.name);
-        });
-        map.fitBounds(L.latLngBounds(waypoints.map((point) => point.coordinate)), { padding: [20, 20] });
+        if (fitCoordinates.length === 0) {
+          return;
+        }
+
+        const bounds = L.latLngBounds(fitCoordinates);
+        if (!bounds.isValid()) {
+          return;
+        }
+
+        const southWest = bounds.getSouthWest();
+        const northEast = bounds.getNorthEast();
+        if (southWest.lat === northEast.lat && southWest.lng === northEast.lng) {
+          map.setView([southWest.lat, southWest.lng], ${f});
+          return;
+        }
+
+        map.fitBounds(bounds, { padding: [20, 20] });
       }
 
       loadLeaflet().then(initMap).catch((error) => {
-        renderError('GPX Map Error: ' + (error && error.message ? error.message : 'Unable to initialize map.'));
+        renderError('Map Error: ' + (error && error.message ? error.message : 'Unable to initialize map.'));
       });
     })();
-  `;return{html:L,script:U}}function M(){return{options:[{label:"gpxmap",detail:"Insert GPX map widget",invoke:"gpxmap.insertGPXMap"}]}}var A={insertGPXMap:T,renderGPXWidget:S,gpxSlashComplete:M},E={name:"gpxmap",version:.1,imports:["https://get.silverbullet.md/global.plug.json"],functions:{insertGPXMap:{path:"./gpxmap.ts:insertGPXMap",command:{name:"GPX: Insert Map Widget",requireMode:"rw"}},renderGPXWidget:{path:"./gpxmap.ts:renderGPXWidget",codeWidget:"gpxmap"},gpxSlashComplete:{path:"./gpxmap.ts:gpxSlashComplete",events:["slash:complete"]}},assets:{}},lr={manifest:E,functionMapping:A};b(A,E,self.postMessage);export{lr as plug};
+  `}async function M(e){try{let t=kt(St(e)),o=t.source?await Lt(t.source):void 0;if(!o&&t.markers.length===0&&!t.center)return w("Map Error: Provide a source file, at least one marker, or a center coordinate.");let n=vt();return{html:`<div id="${n}" style="height: ${C(t.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`,script:Dt({config:t,sourceData:o},n)}}catch(t){let o=t instanceof Error?t.message:"Unknown map rendering error.";return w(o)}}function E(){return{options:[{label:"gpxmap",detail:"Insert generic map widget",invoke:"gpxmap.insertGPXMap"}]}}var k={insertGPXMap:S,renderGPXWidget:M,gpxSlashComplete:E},T={name:"gpxmap",version:.1,imports:["https://get.silverbullet.md/global.plug.json"],functions:{insertGPXMap:{path:"./gpxmap.ts:insertGPXMap",command:{name:"Map: Insert Widget",requireMode:"rw"}},renderGPXWidget:{path:"./gpxmap.ts:renderGPXWidget",codeWidget:"gpxmap"},gpxSlashComplete:{path:"./gpxmap.ts:gpxSlashComplete",events:["slash:complete"]}},assets:{}},gr={manifest:T,functionMapping:k};P(k,T,self.postMessage);export{gr as plug};
 //# sourceMappingURL=gpxmap.plug.js.map

@@ -2,7 +2,7 @@
   "name": "silverbullet-plug-gpxmap",
   "version": "0.1.0",
   "private": true,
-  "description": "SilverBullet plug for rendering GPX tracks and waypoints on Leaflet maps",
+  "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with Leaflet",
   "scripts": {
     "build": "npx plug-compile gpxmap.yaml"
   },
