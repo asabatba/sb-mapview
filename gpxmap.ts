@@ -30,13 +30,13 @@ type GeoJsonData = Record<string, unknown>;
 
 type MapSourceData =
 	| {
-		kind: "gpx";
-		content: string;
-	}
+			kind: "gpx";
+			content: string;
+	  }
 	| {
-		kind: "geojson";
-		data: GeoJsonData;
-	};
+			kind: "geojson";
+			data: GeoJsonData;
+	  };
 
 type RenderPayload = {
 	config: MapConfig;
@@ -58,10 +58,9 @@ function escapeHtml(value: string): string {
 
 function buildError(message: string): { html: string; script: string } {
 	return {
-		html:
-			`<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${
-				escapeHtml(message)
-			}</pre>`,
+		html: `<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+			message,
+		)}</pre>`,
 		script: "",
 	};
 }
@@ -127,7 +126,8 @@ function parseWidgetConfig(content: string): RawMapConfig {
 		try {
 			parsed = JSON.parse(trimmed);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown JSON parse error.";
+			const message =
+				error instanceof Error ? error.message : "Unknown JSON parse error.";
 			throw new Error(`Map config must be valid JSON: ${message}`);
 		}
 
@@ -177,7 +177,9 @@ function normalizeMarkers(value: unknown): MarkerConfig[] {
 		const lat = Number(rawMarker.lat);
 		const lon = Number(rawMarker.lon);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-			throw new Error(`Marker ${index + 1} must include numeric \`lat\` and \`lon\`.`);
+			throw new Error(
+				`Marker ${index + 1} must include numeric \`lat\` and \`lon\`.`,
+			);
 		}
 
 		const label = asString(rawMarker.label);
@@ -190,14 +192,14 @@ function normalizeMarkers(value: unknown): MarkerConfig[] {
 function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 	const source = asString(rawConfig.source) || asString(rawConfig.url);
 	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
-	const center = rawConfig.center === undefined
-		? undefined
-		: asCoordinate(rawConfig.center);
+	const center =
+		rawConfig.center === undefined ? undefined : asCoordinate(rawConfig.center);
 	if (rawConfig.center !== undefined && !center) {
 		throw new Error("`center` must be a JSON array like [lat, lon].");
 	}
 
-	const zoom = rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
+	const zoom =
+		rawConfig.zoom === undefined ? undefined : Number(rawConfig.zoom);
 	if (rawConfig.zoom !== undefined && !Number.isFinite(zoom)) {
 		throw new Error("`zoom` must be a number.");
 	}
@@ -239,17 +241,20 @@ function hasGpxRoot(gpxContent: string): boolean {
 }
 
 function isSupportedGeoJsonType(type: unknown): boolean {
-	return typeof type === "string" && [
-		"Feature",
-		"FeatureCollection",
-		"Point",
-		"MultiPoint",
-		"LineString",
-		"MultiLineString",
-		"Polygon",
-		"MultiPolygon",
-		"GeometryCollection",
-	].includes(type);
+	return (
+		typeof type === "string" &&
+		[
+			"Feature",
+			"FeatureCollection",
+			"Point",
+			"MultiPoint",
+			"LineString",
+			"MultiLineString",
+			"Polygon",
+			"MultiPolygon",
+			"GeometryCollection",
+		].includes(type)
+	);
 }
 
 function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
@@ -257,34 +262,68 @@ function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
 	try {
 		parsed = JSON.parse(content);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown JSON parse error.";
+		const message =
+			error instanceof Error ? error.message : "Unknown JSON parse error.";
 		throw new Error(`GeoJSON Error: Invalid JSON in ${sourcePath}: ${message}`);
 	}
 
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`GeoJSON Error: ${sourcePath} must contain a GeoJSON object.`);
+		throw new Error(
+			`GeoJSON Error: ${sourcePath} must contain a GeoJSON object.`,
+		);
 	}
 
 	const geoJson = parsed as Record<string, unknown>;
 	if (!isSupportedGeoJsonType(geoJson.type)) {
-		throw new Error(`GeoJSON Error: Unsupported or missing GeoJSON type in ${sourcePath}.`);
+		throw new Error(
+			`GeoJSON Error: Unsupported or missing GeoJSON type in ${sourcePath}.`,
+		);
 	}
 
 	return geoJson;
 }
 
-async function loadSourceData(sourcePath: string): Promise<MapSourceData> {
-	const fileExists = await space.fileExists(sourcePath);
-	if (!fileExists) {
+function sourcePathCandidates(sourcePath: string): string[] {
+	const trimmed = sourcePath.trim();
+	if (!trimmed) {
+		return [];
+	}
+
+	if (trimmed.startsWith("/")) {
+		return [trimmed, trimmed.slice(1)];
+	}
+
+	return [trimmed, `/${trimmed}`];
+}
+
+async function readSourceFile(sourcePath: string): Promise<string> {
+	let lastError: unknown;
+
+	for (const candidate of sourcePathCandidates(sourcePath)) {
+		try {
+			return new TextDecoder().decode(await space.readFile(candidate));
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	const message = lastError instanceof Error ? lastError.message : "";
+	if (message) {
 		throw new Error(`Map Error: File not found: ${sourcePath}`);
 	}
 
-	const content = new TextDecoder().decode(await space.readFile(sourcePath));
+	throw new Error(`Map Error: File not found: ${sourcePath}`);
+}
+
+async function loadSourceData(sourcePath: string): Promise<MapSourceData> {
+	const content = await readSourceFile(sourcePath);
 	const lowerSource = sourcePath.toLowerCase();
 
 	if (lowerSource.endsWith(".gpx")) {
 		if (!hasGpxRoot(content)) {
-			throw new Error(`GPX Map Error: File is not valid GPX XML: ${sourcePath}`);
+			throw new Error(
+				`GPX Map Error: File is not valid GPX XML: ${sourcePath}`,
+			);
 		}
 
 		const trackPoints = extractCoordinates(content, "trkpt");
@@ -579,7 +618,9 @@ export async function renderGPXWidget(
 ): Promise<{ html: string; script: string }> {
 	try {
 		const config = normalizeConfig(parseWidgetConfig(widgetBody));
-		const sourceData = config.source ? await loadSourceData(config.source) : undefined;
+		const sourceData = config.source
+			? await loadSourceData(config.source)
+			: undefined;
 
 		if (!sourceData && config.markers.length === 0 && !config.center) {
 			return buildError(
@@ -588,15 +629,15 @@ export async function renderGPXWidget(
 		}
 
 		const mapId = createMapId();
-		const html =
-			`<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`;
+		const html = `<div id="${mapId}" style="height: ${escapeHtml(config.height)}; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></div>`;
 
 		return {
 			html,
 			script: createMapScript({ config, sourceData }, mapId),
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown map rendering error.";
+		const message =
+			error instanceof Error ? error.message : "Unknown map rendering error.";
 		return buildError(message);
 	}
 }
