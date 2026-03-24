@@ -1,4 +1,7 @@
-import { DEFAULT_HEIGHT } from "./mapview-constants.ts";
+import {
+	DEFAULT_HEIGHT,
+	DEFAULT_SOURCE_LINE_COLORS,
+} from "./mapview-constants.ts";
 import type {
 	Coordinate,
 	MapConfig,
@@ -401,6 +404,25 @@ function normalizeSources(
 	return [normalizeSourceEntry(sourceValue, 0, defaultStyle)];
 }
 
+function assignDefaultSourceLineColors(sources: SourceEntry[]): SourceEntry[] {
+	return sources.map((source, index) => {
+		if (source.style.lineColor !== undefined) {
+			return source;
+		}
+
+		return {
+			...source,
+			style: {
+				...source.style,
+				lineColor:
+					DEFAULT_SOURCE_LINE_COLORS[
+						index % DEFAULT_SOURCE_LINE_COLORS.length
+					],
+			},
+		};
+	});
+}
+
 function normalizeUrlSource(
 	urlValue: unknown,
 	defaultStyle: SourceStyle,
@@ -455,7 +477,7 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 	}
 
 	return {
-		sources,
+		sources: assignDefaultSourceLineColors(sources),
 		height,
 		center,
 		zoom,

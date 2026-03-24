@@ -208,7 +208,8 @@ export async function loadSourceData(
 			return {
 				kind: "gpx",
 				trackGeoJson: createLineFeature(trackPoints),
-				markers: buildTrackMarkers(trackPoints, source.style.markerColor),
+				// markers: buildTrackMarkers(trackPoints, source.style.markerColor),
+				markers: [],
 				style: source.style,
 			};
 		}
