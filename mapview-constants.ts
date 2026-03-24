@@ -4,7 +4,6 @@ export const DEFAULT_HEIGHT = "400px";
 export const DEFAULT_ZOOM = 13;
 export const DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 export const DEFAULT_SOURCE_LINE_COLORS = [
-	"#2563eb",
 	"#dc2626",
 	"#059669",
 	"#d97706",
@@ -12,6 +11,7 @@ export const DEFAULT_SOURCE_LINE_COLORS = [
 	"#db2777",
 	"#0891b2",
 	"#65a30d",
+	"#2563eb",
 ] as const;
 export const DEFAULT_SOURCE_STYLE: Required<Omit<SourceStyle, "markerColor">> =
 	{

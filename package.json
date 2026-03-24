@@ -4,12 +4,14 @@
   "private": true,
   "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with MapLibre GL JS",
   "scripts": {
-    "build": "npx plug-compile mapview.yaml"
+    "build": "npx plug-compile mapview.yaml",
+    "format": "npx @biomejs/biome check --write"
   },
   "dependencies": {
     "@silverbulletmd/silverbullet": ">=2.5.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.8",
     "maplibre-gl": "^5.21.0"
   }
 }

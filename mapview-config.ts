@@ -415,9 +415,7 @@ function assignDefaultSourceLineColors(sources: SourceEntry[]): SourceEntry[] {
 			style: {
 				...source.style,
 				lineColor:
-					DEFAULT_SOURCE_LINE_COLORS[
-						index % DEFAULT_SOURCE_LINE_COLORS.length
-					],
+					DEFAULT_SOURCE_LINE_COLORS[index % DEFAULT_SOURCE_LINE_COLORS.length],
 			},
 		};
 	});
