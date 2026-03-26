@@ -4,7 +4,7 @@ This plug adds a `mapview` code widget for rendering GPX files, GeoJSON files, a
 
 ## Features
 
-- Render GPX tracks with start and end markers
+- Render GPX tracks
 - Fall back to GPX waypoints when a GPX file has no trackpoints
 - Load GeoJSON files from your SilverBullet space
 - Render inline markers without any external file
