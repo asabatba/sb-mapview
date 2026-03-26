@@ -42,6 +42,8 @@ Supported fields:
 - `styleUrl`: optional per-widget MapLibre style URL override
 - `sourceStyle`: shared style applied to all file-based sources unless a source overrides it
 - `markerStyle`: shared style applied to inline markers unless a marker overrides it
+- `autoFit`: optional boolean, defaults to `true`
+- `maplibreVersion`: optional per-page MapLibre CDN version override
 - `markers`: array of marker objects with `lat`, `lon`, optional `label`, `popup`, `color`, `scale`, `popupBackgroundColor`, `popupTextColor`, `popupBorderColor`, `popupClassName`, and `popupMaxWidth`
 
 Source objects use this shape:
@@ -179,7 +181,9 @@ The basemap is configured with a global MapLibre style URL. Individual widgets c
 config.set("mapview.styleUrl", "https://demotiles.maplibre.org/style.json")
 ```
 
-If `mapview.styleUrl` is not set, the widget falls back to the official MapLibre demo style.
+If `mapview.styleUrl` is not set, the widget falls back to the OpenFreeMap Liberty style at `https://tiles.openfreemap.org/styles/liberty`.
+
+`mapview.maplibreVersion` can also be set globally, and individual widgets may override it. A page can only use one MapLibre GL JS version at a time; if widgets request different versions, later widgets will render an explicit error instead of silently reusing the wrong runtime.
 
 ## Compatibility Notes
 

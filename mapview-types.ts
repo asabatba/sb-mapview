@@ -24,6 +24,9 @@ export type RawMapConfig = {
 	styleUrl?: unknown;
 	sourceStyle?: unknown;
 	markerStyle?: unknown;
+	fitPadding?: unknown;
+	autoFit?: unknown;
+	maplibreVersion?: unknown;
 };
 
 export type SourceStyle = {
@@ -34,6 +37,8 @@ export type SourceStyle = {
 	fillOpacity?: number;
 	pointColor?: string;
 	pointRadius?: number;
+	pointStrokeColor?: string;
+	pointStrokeWidth?: number;
 	markerColor?: string;
 };
 
@@ -55,6 +60,7 @@ export type MarkerConfig = PopupStyle &
 
 export type SourceEntry = {
 	path: string;
+	label?: string;
 	style: SourceStyle;
 };
 
@@ -67,6 +73,9 @@ export type MapConfig = {
 	styleUrl?: string;
 	sourceStyle: SourceStyle;
 	markerStyle: MarkerStyle;
+	fitPadding: number;
+	autoFit: boolean;
+	maplibreVersion?: string;
 };
 
 export type GeoJsonData = Record<string, unknown>;
@@ -90,6 +99,7 @@ export type RenderPayload = {
 	config: MapConfig;
 	sourceData: MapSourceData[];
 	styleUrl: string;
+	maplibreVersion: string;
 };
 
 export type WidgetRenderResult = {

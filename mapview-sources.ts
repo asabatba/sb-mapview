@@ -1,4 +1,5 @@
 import { space } from "@silverbulletmd/silverbullet/syscalls";
+import { filter, parse } from "txml/txml";
 
 import type {
 	Coordinate,
@@ -7,81 +8,176 @@ import type {
 	MarkerConfig,
 	SourceEntry,
 } from "./mapview-types.ts";
-import { decodeXmlEntities } from "./mapview-utils.ts";
 
-function extractCoordinates(
-	gpxContent: string,
-	tagName: "trkpt" | "wpt",
-): Coordinate[] {
-	const matches = gpxContent.matchAll(
-		new RegExp(
-			`<${tagName}\\b[^>]*?lat=["']([^"']+)["'][^>]*?lon=["']([^"']+)["'][^>]*?>`,
-			"gi",
-		),
-	);
+type TxmlNode = {
+	tagName: string;
+	attributes: Record<string, string | boolean>;
+	children: (TxmlNode | string)[];
+};
 
-	const coordinates: Coordinate[] = [];
-	for (const match of matches) {
-		const lat = Number.parseFloat(match[1]);
-		const lon = Number.parseFloat(match[2]);
+function localName(tagName: string): string {
+	const colon = tagName.lastIndexOf(":");
+	return colon === -1 ? tagName : tagName.slice(colon + 1);
+}
+
+function nodeLocalName(node: TxmlNode, name: string): boolean {
+	return localName(node.tagName).toLowerCase() === name;
+}
+
+function textContent(node: TxmlNode): string {
+	return node.children
+		.filter((c): c is string => typeof c === "string")
+		.join("")
+		.trim();
+}
+
+function parseTrackPoints(nodes: TxmlNode[]): Coordinate[] {
+	const trackPoints: Coordinate[] = [];
+
+	for (const node of nodes) {
+		const lat = Number.parseFloat(String(node.attributes.lat ?? ""));
+		const lon = Number.parseFloat(String(node.attributes.lon ?? ""));
 		if (Number.isFinite(lat) && Number.isFinite(lon)) {
-			coordinates.push([lat, lon]);
+			trackPoints.push([lat, lon]);
 		}
 	}
 
-	return coordinates;
+	return trackPoints;
 }
 
-function extractWaypoints(
+function parseGpxContent(
 	gpxContent: string,
-	markerColor?: string,
-): MarkerConfig[] {
-	const waypoints = gpxContent.matchAll(
-		/<wpt\b[^>]*?lat=["']([^"']+)["'][^>]*?lon=["']([^"']+)["'][^>]*?>([\s\S]*?)<\/wpt>/gi,
-	);
+	markerColor: string | undefined,
+): { trackSegments: Coordinate[][]; waypoints: MarkerConfig[] } | null {
+	const nodes = parse(gpxContent) as (TxmlNode | string)[];
 
-	const markers: MarkerConfig[] = [];
-	for (const match of waypoints) {
-		const lat = Number.parseFloat(match[1]);
-		const lon = Number.parseFloat(match[2]);
+	const gpxRoots = filter(nodes, (node: TxmlNode) =>
+		nodeLocalName(node, "gpx"),
+	);
+	if (gpxRoots.length === 0) {
+		return null;
+	}
+
+	const trackSegments: Coordinate[][] = [];
+	for (const gpxRoot of gpxRoots as TxmlNode[]) {
+		const tracks = filter([gpxRoot], (node: TxmlNode) =>
+			nodeLocalName(node, "trk"),
+		) as TxmlNode[];
+
+		for (const track of tracks) {
+			const segments = filter([track], (node: TxmlNode) =>
+				nodeLocalName(node, "trkseg"),
+			) as TxmlNode[];
+
+			if (segments.length === 0) {
+				const trackPoints = parseTrackPoints(
+					filter([track], (node: TxmlNode) =>
+						nodeLocalName(node, "trkpt"),
+					) as TxmlNode[],
+				);
+				if (trackPoints.length > 0) {
+					trackSegments.push(trackPoints);
+				}
+				continue;
+			}
+
+			for (const segment of segments) {
+				const segmentPoints = parseTrackPoints(
+					filter([segment], (node: TxmlNode) =>
+						nodeLocalName(node, "trkpt"),
+					) as TxmlNode[],
+				);
+				if (segmentPoints.length > 0) {
+					trackSegments.push(segmentPoints);
+				}
+			}
+		}
+	}
+
+	const wpts = filter(nodes, (node: TxmlNode) => nodeLocalName(node, "wpt"));
+	const waypoints: MarkerConfig[] = [];
+	for (const node of wpts as TxmlNode[]) {
+		const lat = Number.parseFloat(String(node.attributes.lat ?? ""));
+		const lon = Number.parseFloat(String(node.attributes.lon ?? ""));
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
 			continue;
 		}
 
-		const nameMatch = match[3].match(/<name\b[^>]*>([\s\S]*?)<\/name>/i);
-		const popup = nameMatch
-			? decodeXmlEntities(nameMatch[1].trim())
-			: "Waypoint";
-		markers.push({ lat, lon, popup, color: markerColor });
+		const nameNode = node.children.find(
+			(c): c is TxmlNode => typeof c !== "string" && nodeLocalName(c, "name"),
+		);
+		const popup = nameNode ? textContent(nameNode) || "Waypoint" : "Waypoint";
+		waypoints.push({ lat, lon, popup, color: markerColor });
 	}
 
-	return markers;
+	return { trackSegments, waypoints };
 }
 
-function createLineFeature(trackPoints: Coordinate[]): GeoJsonData | undefined {
-	if (trackPoints.length < 2) {
+function createTrackFeatures(
+	trackSegments: Coordinate[][],
+): GeoJsonData | undefined {
+	const lineFeatures = trackSegments
+		.filter((segment) => segment.length >= 2)
+		.map((segment, index) => ({
+			type: "Feature",
+			properties: {
+				source: "gpx-track",
+				segment: index + 1,
+			},
+			geometry: {
+				type: "LineString",
+				coordinates: segment.map(([lat, lon]) => [lon, lat]),
+			},
+		}));
+
+	if (lineFeatures.length === 0) {
 		return undefined;
 	}
 
 	return {
 		type: "FeatureCollection",
-		features: [
-			{
-				type: "Feature",
-				properties: {
-					source: "gpx-track",
-				},
-				geometry: {
-					type: "LineString",
-					coordinates: trackPoints.map(([lat, lon]) => [lon, lat]),
-				},
-			},
-		],
+		features: lineFeatures,
 	};
 }
 
-function hasGpxRoot(gpxContent: string): boolean {
-	return /<(?:\w+:)?gpx\b/i.test(gpxContent);
+function buildTrackMarkers(
+	trackSegments: Coordinate[][],
+	markerColor?: string,
+): MarkerConfig[] {
+	const hasMultipleSegments = trackSegments.length > 1;
+
+	return trackSegments.flatMap((segment, index) => {
+		if (segment.length === 0) {
+			return [];
+		}
+
+		const segmentLabel = hasMultipleSegments ? `Segment ${index + 1} ` : "";
+		if (segment.length === 1) {
+			return [
+				{
+					lat: segment[0][0],
+					lon: segment[0][1],
+					popup: `${segmentLabel}track point`,
+					color: markerColor,
+				},
+			];
+		}
+
+		return [
+			{
+				lat: segment[0][0],
+				lon: segment[0][1],
+				popup: `${segmentLabel}start`,
+				color: markerColor,
+			},
+			{
+				lat: segment[segment.length - 1][0],
+				lon: segment[segment.length - 1][1],
+				popup: `${segmentLabel}end`,
+				color: markerColor,
+			},
+		];
+	});
 }
 
 function isSupportedGeoJsonType(type: unknown): boolean {
@@ -140,47 +236,27 @@ function sourcePathCandidates(sourcePath: string): string[] {
 	return [trimmed, `/${trimmed}`];
 }
 
+const sourceCache = new Map<string, { content: string; timestamp: number }>();
+const SOURCE_CACHE_TTL_MS = 5000;
+
 async function readSourceFile(sourcePath: string): Promise<string> {
+	const now = Date.now();
+	const cached = sourceCache.get(sourcePath);
+	if (cached && now - cached.timestamp < SOURCE_CACHE_TTL_MS) {
+		return cached.content;
+	}
+
 	for (const candidate of sourcePathCandidates(sourcePath)) {
 		try {
-			return new TextDecoder().decode(await space.readFile(candidate));
+			const content = new TextDecoder().decode(await space.readFile(candidate));
+			sourceCache.set(sourcePath, { content, timestamp: now });
+			return content;
 		} catch {
 			//
 		}
 	}
 
 	throw new Error(`Map Error: File not found: ${sourcePath}`);
-}
-
-function buildTrackMarkers(
-	trackPoints: Coordinate[],
-	markerColor?: string,
-): MarkerConfig[] {
-	if (trackPoints.length === 1) {
-		return [
-			{
-				lat: trackPoints[0][0],
-				lon: trackPoints[0][1],
-				popup: "Track point",
-				color: markerColor,
-			},
-		];
-	}
-
-	return [
-		{
-			lat: trackPoints[0][0],
-			lon: trackPoints[0][1],
-			popup: "Start",
-			color: markerColor,
-		},
-		{
-			lat: trackPoints[trackPoints.length - 1][0],
-			lon: trackPoints[trackPoints.length - 1][1],
-			popup: "End",
-			color: markerColor,
-		},
-	];
 }
 
 export async function loadSourceData(
@@ -190,26 +266,25 @@ export async function loadSourceData(
 	const lowerSource = source.path.toLowerCase();
 
 	if (lowerSource.endsWith(".gpx")) {
-		if (!hasGpxRoot(content)) {
+		const gpx = parseGpxContent(content, source.style.markerColor);
+		if (!gpx) {
 			throw new Error(
 				`GPX Map Error: File is not valid GPX XML: ${source.path}`,
 			);
 		}
 
-		const trackPoints = extractCoordinates(content, "trkpt");
-		const waypoints = extractWaypoints(content, source.style.markerColor);
-		if (trackPoints.length === 0 && waypoints.length === 0) {
+		const { trackSegments, waypoints } = gpx;
+		if (trackSegments.length === 0 && waypoints.length === 0) {
 			throw new Error(
 				`GPX Map Error: No usable trackpoints or waypoints found in ${source.path}`,
 			);
 		}
 
-		if (trackPoints.length > 0) {
+		if (trackSegments.length > 0) {
 			return {
 				kind: "gpx",
-				trackGeoJson: createLineFeature(trackPoints),
-				// markers: buildTrackMarkers(trackPoints, source.style.markerColor),
-				markers: [],
+				trackGeoJson: createTrackFeatures(trackSegments),
+				markers: buildTrackMarkers(trackSegments, source.style.markerColor),
 				style: source.style,
 			};
 		}

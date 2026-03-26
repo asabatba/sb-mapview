@@ -1,4 +1,5 @@
 import {
+	DEFAULT_FIT_PADDING,
 	DEFAULT_HEIGHT,
 	DEFAULT_SOURCE_LINE_COLORS,
 } from "./mapview-constants.ts";
@@ -164,6 +165,32 @@ function parseOpacityField(
 	return numberValue;
 }
 
+function parseBooleanField(
+	value: unknown,
+	fieldName: string,
+	context: string,
+): boolean | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	throw new Error(`${context}: \`${fieldName}\` must be a boolean.`);
+}
+
 function normalizeSourceStyle(value: unknown, context: string): SourceStyle {
 	if (value === undefined) {
 		return {};
@@ -196,6 +223,16 @@ function normalizeSourceStyle(value: unknown, context: string): SourceStyle {
 		pointRadius: parsePositiveNumberField(
 			rawStyle.pointRadius,
 			"pointRadius",
+			context,
+		),
+		pointStrokeColor: parseColorField(
+			rawStyle.pointStrokeColor,
+			"pointStrokeColor",
+			context,
+		),
+		pointStrokeWidth: parsePositiveNumberField(
+			rawStyle.pointStrokeWidth,
+			"pointStrokeWidth",
 			context,
 		),
 		markerColor: parseColorField(rawStyle.markerColor, "markerColor", context),
@@ -380,6 +417,7 @@ function normalizeSourceEntry(
 
 	return {
 		path,
+		label: asString(rawSource.label),
 		style: mergeSourceStyle(
 			defaultStyle,
 			normalizeSourceStyle(rawSource.style, `Source ${index + 1} style`),
@@ -474,6 +512,24 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		throw new Error("`styleUrl` must be a non-empty string.");
 	}
 
+	const fitPadding =
+		rawConfig.fitPadding === undefined
+			? DEFAULT_FIT_PADDING
+			: Number(rawConfig.fitPadding);
+	if (!Number.isFinite(fitPadding) || fitPadding < 0) {
+		throw new Error("`fitPadding` must be a non-negative number.");
+	}
+
+	const autoFit = parseBooleanField(rawConfig.autoFit, "autoFit", "`autoFit`");
+
+	const maplibreVersion =
+		rawConfig.maplibreVersion === undefined
+			? undefined
+			: asString(rawConfig.maplibreVersion);
+	if (rawConfig.maplibreVersion !== undefined && !maplibreVersion) {
+		throw new Error("`maplibreVersion` must be a non-empty string.");
+	}
+
 	return {
 		sources: assignDefaultSourceLineColors(sources),
 		height,
@@ -483,5 +539,8 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		styleUrl,
 		sourceStyle,
 		markerStyle,
+		fitPadding,
+		autoFit: autoFit ?? true,
+		maplibreVersion,
 	};
 }

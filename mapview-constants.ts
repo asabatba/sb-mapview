@@ -2,7 +2,8 @@ import type { SourceStyle } from "./mapview-types.ts";
 
 export const DEFAULT_HEIGHT = "400px";
 export const DEFAULT_ZOOM = 13;
-export const DEFAULT_STYLE_URL = "https://demotiles.maplibre.org/style.json";
+export const DEFAULT_FIT_PADDING = 40;
+export const DEFAULT_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 export const DEFAULT_SOURCE_LINE_COLORS = [
 	"#dc2626",
 	"#059669",
@@ -22,5 +23,7 @@ export const DEFAULT_SOURCE_STYLE: Required<Omit<SourceStyle, "markerColor">> =
 		fillOpacity: 0.18,
 		pointColor: "#dc2626",
 		pointRadius: 6,
+		pointStrokeColor: "#ffffff",
+		pointStrokeWidth: 2,
 	};
 export const MAPLIBRE_VERSION = "5.21.0";

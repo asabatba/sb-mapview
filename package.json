@@ -8,7 +8,8 @@
     "format": "npx @biomejs/biome check --write"
   },
   "dependencies": {
-    "@silverbulletmd/silverbullet": ">=2.5.3"
+    "@silverbulletmd/silverbullet": ">=2.5.3",
+    "txml": "^5.2.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.8",

@@ -3,7 +3,7 @@ import {
 	config as globalConfig,
 } from "@silverbulletmd/silverbullet/syscalls";
 import { normalizeConfig, parseWidgetConfig } from "./mapview-config.ts";
-import { DEFAULT_STYLE_URL } from "./mapview-constants.ts";
+import { DEFAULT_STYLE_URL, MAPLIBRE_VERSION } from "./mapview-constants.ts";
 import { createMapScript } from "./mapview-runtime.ts";
 import { loadSourceData } from "./mapview-sources.ts";
 import type { WidgetRenderResult } from "./mapview-types.ts";
@@ -73,29 +73,35 @@ async function ensureConfigSchemaDefined(): Promise<void> {
 				default: DEFAULT_STYLE_URL,
 				description: "MapLibre style URL used by mapview.",
 			}),
+			globalConfig.define("mapview.maplibreVersion", {
+				type: "string",
+				default: MAPLIBRE_VERSION,
+				description: "MapLibre GL JS version loaded from unpkg CDN by mapview.",
+			}),
 		]).then(() => undefined);
 	}
 
 	await configSchemaRegistration;
 }
 
-async function loadStyleConfig(
+async function loadSpaceConfig(
 	widgetStyleUrl?: string,
-): Promise<{ styleUrl: string }> {
+	widgetMaplibreVersion?: string,
+): Promise<{ styleUrl: string; maplibreVersion: string }> {
 	await ensureConfigSchemaDefined();
 
-	if (widgetStyleUrl) {
-		return { styleUrl: widgetStyleUrl };
-	}
+	const styleUrl = widgetStyleUrl
+		? widgetStyleUrl
+		: asString(await globalConfig.get("mapview.styleUrl", DEFAULT_STYLE_URL)) ||
+			DEFAULT_STYLE_URL;
 
-	const configuredStyleUrl = await globalConfig.get(
-		"mapview.styleUrl",
-		DEFAULT_STYLE_URL,
-	);
+	const maplibreVersion = widgetMaplibreVersion
+		? widgetMaplibreVersion
+		: asString(
+				await globalConfig.get("mapview.maplibreVersion", MAPLIBRE_VERSION),
+			) || MAPLIBRE_VERSION;
 
-	return {
-		styleUrl: asString(configuredStyleUrl) || DEFAULT_STYLE_URL,
-	};
+	return { styleUrl, maplibreVersion };
 }
 
 function buildMapHtml(mapId: string, height: string): string {
@@ -108,7 +114,10 @@ export async function renderMapViewWidget(
 	try {
 		const config = normalizeConfig(parseWidgetConfig(widgetBody));
 		const sourceData = await Promise.all(config.sources.map(loadSourceData));
-		const styleConfig = await loadStyleConfig(config.styleUrl);
+		const styleConfig = await loadSpaceConfig(
+			config.styleUrl,
+			config.maplibreVersion,
+		);
 
 		if (
 			sourceData.length === 0 &&
