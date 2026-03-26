@@ -140,46 +140,6 @@ function createTrackFeatures(
 	};
 }
 
-function buildTrackMarkers(
-	trackSegments: Coordinate[][],
-	markerColor?: string,
-): MarkerConfig[] {
-	const hasMultipleSegments = trackSegments.length > 1;
-
-	return trackSegments.flatMap((segment, index) => {
-		if (segment.length === 0) {
-			return [];
-		}
-
-		const segmentLabel = hasMultipleSegments ? `Segment ${index + 1} ` : "";
-		if (segment.length === 1) {
-			return [
-				{
-					lat: segment[0][0],
-					lon: segment[0][1],
-					popup: `${segmentLabel}track point`,
-					color: markerColor,
-				},
-			];
-		}
-
-		return [
-			{
-				lat: segment[0][0],
-				lon: segment[0][1],
-				popup: `${segmentLabel}start`,
-				color: markerColor,
-			},
-			{
-				lat: segment[segment.length - 1][0],
-				lon: segment[segment.length - 1][1],
-				popup: `${segmentLabel}end`,
-				color: markerColor,
-			},
-		];
-	});
-}
-
 function isSupportedGeoJsonType(type: unknown): boolean {
 	return (
 		typeof type === "string" &&
@@ -284,7 +244,7 @@ export async function loadSourceData(
 			return {
 				kind: "gpx",
 				trackGeoJson: createTrackFeatures(trackSegments),
-				markers: buildTrackMarkers(trackSegments, source.style.markerColor),
+				markers: waypoints,
 				style: source.style,
 			};
 		}

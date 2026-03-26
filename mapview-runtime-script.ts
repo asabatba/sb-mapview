@@ -585,6 +585,101 @@ export function runMapView(
 		};
 	}
 
+	function ensureGpxChevronImage(
+		map: {
+			hasImage?: (id: string) => boolean;
+			addImage: (
+				id: string,
+				image: HTMLCanvasElement | ImageData,
+				options?: Record<string, unknown>,
+			) => void;
+		},
+		color: string,
+	): string | null {
+		const imageId = `mapview-gpx-chevron-${sanitizeClassSegment(color) || "default"}`;
+		if (typeof map.hasImage === "function" && map.hasImage(imageId)) {
+			return imageId;
+		}
+
+		const canvas = document.createElement("canvas");
+		const logicalSize = 24;
+		const pixelRatio = 2;
+		canvas.width = logicalSize * pixelRatio;
+		canvas.height = logicalSize * pixelRatio;
+
+		const context = canvas.getContext("2d");
+		if (!context) {
+			return null;
+		}
+
+		context.scale(pixelRatio, pixelRatio);
+		context.lineCap = "round";
+		context.lineJoin = "round";
+
+		const drawChevron = (strokeStyle: string, lineWidth: number) => {
+			context.beginPath();
+			context.moveTo(8, 6);
+			context.lineTo(16, 12);
+			context.lineTo(8, 18);
+			context.strokeStyle = strokeStyle;
+			context.lineWidth = lineWidth;
+			context.stroke();
+		};
+
+		drawChevron("rgba(0, 0, 0, 0.92)", 5);
+		drawChevron(color, 2);
+
+		const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+		map.addImage(imageId, imageData, { pixelRatio });
+		return imageId;
+	}
+
+	function tryAddGpxDirectionLayer(
+		map: {
+			hasImage?: (id: string) => boolean;
+			addImage: (
+				id: string,
+				image: HTMLCanvasElement | ImageData,
+				options?: Record<string, unknown>,
+			) => void;
+			addLayer: (layer: Record<string, unknown>) => void;
+		},
+		sourceId: string,
+		layerPrefix: string,
+		style: Record<string, unknown> | undefined,
+	): void {
+		const resolvedStyle = resolvedSourceStyle(style);
+		const imageId = ensureGpxChevronImage(map, resolvedStyle.lineColor);
+		if (!imageId) {
+			return;
+		}
+
+		try {
+			map.addLayer({
+				id: `${layerPrefix}-direction`,
+				type: "symbol",
+				source: sourceId,
+				filter: ["==", ["geometry-type"], "LineString"],
+				layout: {
+					"symbol-placement": "line",
+					"symbol-spacing": 160,
+					"icon-image": imageId,
+					"icon-size": 1,
+					"icon-keep-upright": false,
+					"icon-allow-overlap": true,
+					"icon-ignore-placement": true,
+					"icon-rotation-alignment": "map",
+					"icon-pitch-alignment": "map",
+				},
+			});
+		} catch (error) {
+			console.warn(
+				"mapview: unable to add GPX direction chevrons; rendering track without direction layer.",
+				error,
+			);
+		}
+	}
+
 	function addGeoJsonLayers(
 		maplibregl: {
 			Popup: new (
@@ -610,6 +705,9 @@ export function runMapView(
 		layerPrefix: string,
 		fitPoints: [number, number][],
 		style: Record<string, unknown> | undefined,
+		options?: {
+			showDirection?: boolean;
+		},
 	): void {
 		const coordinates = collectGeoJsonLngLats(data);
 		if (coordinates.length === 0) {
@@ -648,6 +746,10 @@ export function runMapView(
 				"line-opacity": resolvedStyle.lineOpacity,
 			},
 		});
+
+		if (options?.showDirection) {
+			tryAddGpxDirectionLayer(map, sourceId, layerPrefix, style);
+		}
 
 		map.addLayer({
 			id: pointLayerId,
@@ -786,6 +888,7 @@ export function runMapView(
 								`${mapId}-gpx-${index}`,
 								fitPoints,
 								sourceData.style,
+								{ showDirection: true },
 							);
 						}
 
