@@ -1,12 +1,11 @@
-import { space } from "@silverbulletmd/silverbullet/syscalls";
 import { XMLParser } from "fast-xml-parser";
 
 import type {
 	Coordinate,
+	FileLayerConfig,
 	GeoJsonData,
 	MapSourceData,
 	MarkerConfig,
-	SourceEntry,
 } from "./mapview-types.ts";
 
 type XmlObject = Record<string, unknown>;
@@ -14,6 +13,17 @@ type GpxRoot = {
 	trk?: unknown;
 	wpt?: unknown;
 };
+
+type ReadFileFn = (path: string) => Promise<Uint8Array>;
+type ReadSourceOptions = {
+	cacheTtlMs?: number;
+	readFile?: ReadFileFn;
+};
+
+async function defaultReadFile(path: string): Promise<Uint8Array> {
+	const { space } = await import("@silverbulletmd/silverbullet/syscalls");
+	return space.readFile(path);
+}
 
 const xmlParser = new XMLParser({
 	ignoreAttributes: false,
@@ -44,6 +54,10 @@ function asXmlObject(value: unknown): XmlObject | undefined {
 		: undefined;
 }
 
+function isXmlObject(value: XmlObject | undefined): value is XmlObject {
+	return Boolean(value);
+}
+
 function asText(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -62,7 +76,7 @@ function parseTrackPoints(nodes: XmlObject[]): Coordinate[] {
 	return trackPoints;
 }
 
-function parseGpxContent(
+export function parseGpxContent(
 	gpxContent: string,
 	markerColor: string | undefined,
 ): { trackSegments: Coordinate[][]; waypoints: MarkerConfig[] } | null {
@@ -79,12 +93,14 @@ function parseGpxContent(
 	}
 
 	const trackSegments: Coordinate[][] = [];
-	for (const track of asArray(gpxRoot.trk).map(asXmlObject).filter(Boolean)) {
-		const segments = asArray(track.trkseg).map(asXmlObject).filter(Boolean);
+	for (const track of asArray(gpxRoot.trk)
+		.map(asXmlObject)
+		.filter(isXmlObject)) {
+		const segments = asArray(track.trkseg).map(asXmlObject).filter(isXmlObject);
 
 		if (segments.length === 0) {
 			const trackPoints = parseTrackPoints(
-				asArray(track.trkpt).map(asXmlObject).filter(Boolean),
+				asArray(track.trkpt).map(asXmlObject).filter(isXmlObject),
 			);
 			if (trackPoints.length > 0) {
 				trackSegments.push(trackPoints);
@@ -94,7 +110,7 @@ function parseGpxContent(
 
 		for (const segment of segments) {
 			const segmentPoints = parseTrackPoints(
-				asArray(segment.trkpt).map(asXmlObject).filter(Boolean),
+				asArray(segment.trkpt).map(asXmlObject).filter(isXmlObject),
 			);
 			if (segmentPoints.length > 0) {
 				trackSegments.push(segmentPoints);
@@ -105,7 +121,7 @@ function parseGpxContent(
 	const waypoints: MarkerConfig[] = [];
 	for (const waypoint of asArray(gpxRoot.wpt)
 		.map(asXmlObject)
-		.filter(Boolean)) {
+		.filter(isXmlObject)) {
 		const lat = Number.parseFloat(String(waypoint.lat ?? ""));
 		const lon = Number.parseFloat(String(waypoint.lon ?? ""));
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -163,7 +179,7 @@ function isSupportedGeoJsonType(type: unknown): boolean {
 	);
 }
 
-function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
+export function parseGeoJson(content: string, sourcePath: string): GeoJsonData {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(content);
@@ -203,19 +219,31 @@ function sourcePathCandidates(sourcePath: string): string[] {
 }
 
 const sourceCache = new Map<string, { content: string; timestamp: number }>();
-const SOURCE_CACHE_TTL_MS = 5000;
 
-async function readSourceFile(sourcePath: string): Promise<string> {
+export function clearSourceCache(): void {
+	sourceCache.clear();
+}
+
+export async function readSourceFile(
+	sourcePath: string,
+	options: ReadSourceOptions = {},
+): Promise<string> {
 	const now = Date.now();
+	const cacheTtlMs = options.cacheTtlMs ?? 0;
 	const cached = sourceCache.get(sourcePath);
-	if (cached && now - cached.timestamp < SOURCE_CACHE_TTL_MS) {
+	if (cacheTtlMs > 0 && cached && now - cached.timestamp < cacheTtlMs) {
 		return cached.content;
 	}
 
+	const readFile = options.readFile ?? defaultReadFile;
 	for (const candidate of sourcePathCandidates(sourcePath)) {
 		try {
-			const content = new TextDecoder().decode(await space.readFile(candidate));
-			sourceCache.set(sourcePath, { content, timestamp: now });
+			const content = new TextDecoder().decode(await readFile(candidate));
+			if (cacheTtlMs > 0) {
+				sourceCache.set(sourcePath, { content, timestamp: now });
+			} else {
+				sourceCache.delete(sourcePath);
+			}
 			return content;
 		} catch {
 			//
@@ -226,23 +254,27 @@ async function readSourceFile(sourcePath: string): Promise<string> {
 }
 
 export async function loadSourceData(
-	source: SourceEntry,
+	layer: FileLayerConfig,
+	options: ReadSourceOptions = {},
 ): Promise<MapSourceData> {
-	const content = await readSourceFile(source.path);
-	const lowerSource = source.path.toLowerCase();
+	const content = await readSourceFile(layer.path, {
+		...options,
+		cacheTtlMs: layer.sourceCacheTtlMs,
+	});
+	const lowerSource = layer.path.toLowerCase();
 
 	if (lowerSource.endsWith(".gpx")) {
-		const gpx = parseGpxContent(content, source.style.markerColor);
+		const gpx = parseGpxContent(content, layer.style.markerColor);
 		if (!gpx) {
 			throw new Error(
-				`GPX Map Error: File is not valid GPX XML: ${source.path}`,
+				`GPX Map Error: File is not valid GPX XML: ${layer.path}`,
 			);
 		}
 
 		const { trackSegments, waypoints } = gpx;
 		if (trackSegments.length === 0 && waypoints.length === 0) {
 			throw new Error(
-				`GPX Map Error: No usable trackpoints or waypoints found in ${source.path}`,
+				`GPX Map Error: No usable trackpoints or waypoints found in ${layer.path}`,
 			);
 		}
 
@@ -251,26 +283,26 @@ export async function loadSourceData(
 				kind: "gpx",
 				trackGeoJson: createTrackFeatures(trackSegments),
 				markers: waypoints,
-				style: source.style,
+				style: layer.style,
 			};
 		}
 
 		return {
 			kind: "gpx",
 			markers: waypoints,
-			style: source.style,
+			style: layer.style,
 		};
 	}
 
 	if (lowerSource.endsWith(".geojson") || lowerSource.endsWith(".json")) {
 		return {
 			kind: "geojson",
-			data: parseGeoJson(content, source.path),
-			style: source.style,
+			data: parseGeoJson(content, layer.path),
+			style: layer.style,
 		};
 	}
 
 	throw new Error(
-		`Map Error: Unsupported file type for ${source.path}. Use .gpx, .geojson, or .json.`,
+		`Map Error: Unsupported file type for ${layer.path}. Use .gpx, .geojson, or .json.`,
 	);
 }

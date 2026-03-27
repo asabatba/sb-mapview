@@ -1,162 +1,143 @@
-import { DEFAULT_SOURCE_STYLE, DEFAULT_ZOOM } from "./mapview-constants.ts";
 import type { RenderPayload } from "./mapview-types.ts";
 
 type RuntimeDefaults = {
-	sourceStyle: typeof DEFAULT_SOURCE_STYLE;
-	zoom: typeof DEFAULT_ZOOM;
+	sourceStyle: {
+		fillColor: string;
+		fillOpacity: number;
+		labelColor: string;
+		labelHaloColor: string;
+		labelHaloWidth: number;
+		labelSize: number;
+		lineColor: string;
+		lineDasharray: number[];
+		lineOpacity: number;
+		lineWidth: number;
+		pointColor: string;
+		pointRadius: number;
+		pointStrokeColor: string;
+		pointStrokeWidth: number;
+	};
+	zoom: number;
+};
+
+type RuntimeFactories = {
+	createFeatureHelpers: () => {
+		buildLabelTextExpression: (labelProperty?: string) => unknown[];
+		collectGeoJsonLngLats: (geojson: unknown) => [number, number][];
+		getFeaturePopupText: (
+			feature: unknown,
+			popupProperty?: string,
+		) => string | null;
+	};
+	createMapLibreAssetHelpers: () => {
+		loadMapLibre: (
+			maplibreVersion: string,
+			assetBaseUrl?: string,
+		) => Promise<unknown>;
+	};
+	createPopupHelpers: () => {
+		buildPopupClassName: (
+			marker: Record<string, unknown> | null,
+			popupKey: string,
+		) => string;
+		buildPopupOptions: (
+			marker: Record<string, unknown>,
+			popupClassName: string,
+		) => Record<string, unknown>;
+		ensureDefaultPopupStyle: () => void;
+	};
+	createViewHelpers: () => {
+		resolveFitAction: (
+			config: {
+				autoFit?: boolean;
+				center?: [number, number];
+				fitPadding?: number;
+				zoom?: number;
+			},
+			fitPoints: [number, number][],
+			defaultZoom: number,
+		) =>
+			| { kind: "noop" }
+			| { kind: "jumpTo"; center: [number, number]; zoom: number }
+			| { kind: "fitBounds"; padding: number };
+		resolveInitialView: (config: {
+			center?: [number, number];
+			zoom?: number;
+		}) => {
+			hasExplicitCenter: boolean;
+			initialCenter: [number, number];
+			initialZoom: number;
+		};
+		toLngLat: (lat: number, lon: number) => [number, number];
+	};
+};
+
+type MapLibrePopupInstance = {
+	addTo: (map: unknown) => void;
+	setLngLat: (lngLat: unknown) => MapLibrePopupInstance;
+	setText: (text: string) => MapLibrePopupInstance;
+};
+
+type MapLibreMarkerInstance = {
+	addTo: (map: unknown) => void;
+	remove: () => void;
+	setLngLat: (coords: [number, number]) => MapLibreMarkerInstance;
+	setPopup: (popup: unknown) => MapLibreMarkerInstance;
+};
+
+type MapLibreBoundsInstance = {
+	extend: (point: [number, number]) => MapLibreBoundsInstance;
+};
+
+type MapLibreMapInstance = {
+	addImage: (
+		id: string,
+		image: HTMLCanvasElement | ImageData,
+		options?: Record<string, unknown>,
+	) => void;
+	addLayer: (layer: Record<string, unknown>) => void;
+	addSource: (id: string, source: Record<string, unknown>) => void;
+	fitBounds: (
+		bounds: MapLibreBoundsInstance,
+		options: Record<string, unknown>,
+	) => void;
+	getCanvas: () => { style: { cursor: string } };
+	hasImage?: (id: string) => boolean;
+	jumpTo: (options: Record<string, unknown>) => void;
+	off: (eventName: string, handler: (event: unknown) => void) => void;
+	on: {
+		(eventName: string, handler: (event: unknown) => void): void;
+		(
+			eventName: string,
+			layerId: string,
+			handler: (event: unknown) => void,
+		): void;
+	};
+	once: (eventName: string, handler: () => void) => void;
+	remove: () => void;
+};
+
+type MapLibreApi = {
+	LngLatBounds: new (
+		sw: [number, number],
+		ne: [number, number],
+	) => MapLibreBoundsInstance;
+	Map: new (options: Record<string, unknown>) => MapLibreMapInstance;
+	Marker: new (options: Record<string, unknown>) => MapLibreMarkerInstance;
+	Popup: new (options: Record<string, unknown>) => MapLibrePopupInstance;
 };
 
 export function runMapView(
 	mapId: string,
 	payload: RenderPayload,
-	defaults: RuntimeDefaults = {
-		sourceStyle: DEFAULT_SOURCE_STYLE,
-		zoom: DEFAULT_ZOOM,
-	},
+	defaults: RuntimeDefaults,
+	runtimeFactories: RuntimeFactories,
 ): void {
-	const loaderStoreKey = "__mapviewMapLibreLoaders";
-	const loadedVersionKey = "__mapviewLoadedMapLibreVersion";
 	const mapStoreKey = "__mapviewInstances";
-	const popupStyleStoreKey = "__mapviewPopupStyles";
-	const maplibreVersion = payload.maplibreVersion;
-	const maplibreVersionKey = encodeURIComponent(String(maplibreVersion));
-	const cssHref =
-		"https://unpkg.com/maplibre-gl@" +
-		maplibreVersion +
-		"/dist/maplibre-gl.css";
-	const scriptSrc =
-		"https://unpkg.com/maplibre-gl@" + maplibreVersion + "/dist/maplibre-gl.js";
-	const defaultSourceStyle = defaults.sourceStyle;
-	const defaultPopupClassName = "mapview-popup-default";
-
-	function getLoaderStore(): Record<string, Promise<unknown>> {
-		if (!(loaderStoreKey in globalThis)) {
-			(globalThis as Record<string, unknown>)[loaderStoreKey] = {};
-		}
-
-		return (globalThis as Record<string, Record<string, Promise<unknown>>>)[
-			loaderStoreKey
-		];
-	}
-
-	function getMapLibreVersionError(activeVersion: string): Error {
-		return new Error(
-			`MapLibre GL JS ${activeVersion} is already active on this page. mapview supports only one MapLibre version per page.`,
-		);
-	}
-
-	function findVersionedAsset(tagName: string): Element | null {
-		return document.querySelector(
-			`${tagName}[data-mapview-maplibre-version="${maplibreVersionKey}"]`,
-		);
-	}
-
-	function loadMapLibre(): Promise<unknown> {
-		const loaders = getLoaderStore();
-		if (loaders[maplibreVersion]) {
-			return loaders[maplibreVersion];
-		}
-
-		const activeVersions = Object.keys(loaders).filter(
-			(version) => version !== maplibreVersion,
-		);
-		if (activeVersions.length > 0) {
-			return Promise.reject(getMapLibreVersionError(activeVersions[0]));
-		}
-
-		const loadedVersion = (globalThis as Record<string, unknown>)[
-			loadedVersionKey
-		];
-		if (
-			typeof loadedVersion === "string" &&
-			loadedVersion &&
-			loadedVersion !== maplibreVersion &&
-			"maplibregl" in globalThis
-		) {
-			return Promise.reject(getMapLibreVersionError(loadedVersion));
-		}
-
-		loaders[maplibreVersion] = new Promise((resolve, reject) => {
-			const existingStylesheet = findVersionedAsset("link");
-			if (!existingStylesheet) {
-				const link = document.createElement("link");
-				link.rel = "stylesheet";
-				link.href = cssHref;
-				link.setAttribute("data-mapview-maplibre-version", maplibreVersionKey);
-				document.head.appendChild(link);
-			}
-
-			if (
-				"maplibregl" in globalThis &&
-				(globalThis as Record<string, unknown>)[loadedVersionKey] ===
-					maplibreVersion
-			) {
-				resolve((globalThis as Record<string, unknown>).maplibregl);
-				return;
-			}
-
-			let script = findVersionedAsset("script");
-			if (script?.getAttribute("data-mapview-status") === "error") {
-				script.remove();
-				script = null;
-			}
-
-			const handleLoad = () => {
-				const targetScript = findVersionedAsset("script");
-				if (targetScript) {
-					targetScript.setAttribute("data-mapview-status", "loaded");
-				}
-
-				if (!("maplibregl" in globalThis)) {
-					handleError();
-					return;
-				}
-
-				(globalThis as Record<string, unknown>)[loadedVersionKey] =
-					maplibreVersion;
-				resolve((globalThis as Record<string, unknown>).maplibregl);
-			};
-
-			const handleError = () => {
-				const targetScript = findVersionedAsset("script");
-				if (targetScript) {
-					targetScript.setAttribute("data-mapview-status", "error");
-					targetScript.remove();
-				}
-
-				reject(new Error(`Failed to load MapLibre GL JS ${maplibreVersion}.`));
-			};
-
-			if (script) {
-				if (
-					script.getAttribute("data-mapview-status") === "loaded" &&
-					"maplibregl" in globalThis
-				) {
-					(globalThis as Record<string, unknown>)[loadedVersionKey] =
-						maplibreVersion;
-					resolve((globalThis as Record<string, unknown>).maplibregl);
-					return;
-				}
-
-				script.addEventListener("load", handleLoad, { once: true });
-				script.addEventListener("error", handleError, { once: true });
-				return;
-			}
-
-			script = document.createElement("script");
-			script.src = scriptSrc;
-			script.setAttribute("data-mapview-maplibre-version", maplibreVersionKey);
-			script.setAttribute("data-mapview-status", "loading");
-			script.addEventListener("load", handleLoad, { once: true });
-			script.addEventListener("error", handleError, { once: true });
-			document.head.appendChild(script);
-		}).catch((error) => {
-			delete loaders[maplibreVersion];
-			throw error;
-		});
-
-		return loaders[maplibreVersion];
-	}
+	const featureHelpers = runtimeFactories.createFeatureHelpers();
+	const mapLibreAssets = runtimeFactories.createMapLibreAssetHelpers();
+	const popupHelpers = runtimeFactories.createPopupHelpers();
+	const viewHelpers = runtimeFactories.createViewHelpers();
 
 	function renderError(message: string): void {
 		const element = document.getElementById(mapId);
@@ -175,194 +156,6 @@ export function runMapView(
 			"</pre>";
 	}
 
-	function toLngLat(lat: number, lon: number): [number, number] {
-		return [lon, lat];
-	}
-
-	function sanitizeCssValue(value: unknown): string {
-		return String(value || "").replace(/[;{}\\]/g, "");
-	}
-
-	function sanitizeClassSegment(value: unknown): string {
-		return String(value || "")
-			.toLowerCase()
-			.replace(/[^a-z0-9_-]+/g, "-")
-			.replace(/^-+|-+$/g, "");
-	}
-
-	function ensurePopupStyleStore(): {
-		element: HTMLStyleElement | null;
-		rules: Record<string, boolean>;
-	} {
-		if (!(popupStyleStoreKey in globalThis)) {
-			(globalThis as Record<string, unknown>)[popupStyleStoreKey] = {
-				element: null,
-				rules: {},
-			};
-		}
-
-		const store = (
-			globalThis as Record<
-				string,
-				{ element: HTMLStyleElement | null; rules: Record<string, boolean> }
-			>
-		)[popupStyleStoreKey];
-		if (!store.element || !store.element.isConnected) {
-			const style = document.createElement("style");
-			style.setAttribute("data-mapview-popup-styles", "true");
-			document.head.appendChild(style);
-			store.element = style;
-		}
-
-		return store;
-	}
-
-	function appendPopupStyleRule(
-		className: string,
-		popupStyle?: {
-			backgroundColor?: string;
-			textColor?: string;
-			borderColor?: string;
-		},
-	): void {
-		if (!className) {
-			return;
-		}
-
-		const store = ensurePopupStyleStore();
-		if (store.rules[className]) {
-			return;
-		}
-
-		const backgroundColor = sanitizeCssValue(
-			popupStyle?.backgroundColor ? popupStyle.backgroundColor : "Canvas",
-		);
-		const textColor = sanitizeCssValue(
-			popupStyle?.textColor ? popupStyle.textColor : "CanvasText",
-		);
-		const borderColor = sanitizeCssValue(
-			popupStyle?.borderColor ? popupStyle.borderColor : backgroundColor,
-		);
-
-		store.element?.appendChild(
-			document.createTextNode(
-				`.maplibregl-popup.${className} .maplibregl-popup-content {` +
-					`background:${backgroundColor};` +
-					`color:${textColor};` +
-					`border:1px solid ${borderColor};` +
-					"box-shadow:0 10px 28px rgba(0, 0, 0, 0.18);" +
-					"}" +
-					`.maplibregl-popup.${className} .maplibregl-popup-close-button {` +
-					`color:${textColor};` +
-					"}" +
-					`.maplibregl-popup.maplibregl-popup-anchor-top.${className} .maplibregl-popup-tip,` +
-					`.maplibregl-popup.maplibregl-popup-anchor-top-left.${className} .maplibregl-popup-tip,` +
-					`.maplibregl-popup.maplibregl-popup-anchor-top-right.${className} .maplibregl-popup-tip {` +
-					`border-bottom-color:${backgroundColor};` +
-					"}" +
-					`.maplibregl-popup.maplibregl-popup-anchor-bottom.${className} .maplibregl-popup-tip,` +
-					`.maplibregl-popup.maplibregl-popup-anchor-bottom-left.${className} .maplibregl-popup-tip,` +
-					`.maplibregl-popup.maplibregl-popup-anchor-bottom-right.${className} .maplibregl-popup-tip {` +
-					`border-top-color:${backgroundColor};` +
-					"}" +
-					`.maplibregl-popup.maplibregl-popup-anchor-left.${className} .maplibregl-popup-tip {` +
-					`border-right-color:${backgroundColor};` +
-					"}" +
-					`.maplibregl-popup.maplibregl-popup-anchor-right.${className} .maplibregl-popup-tip {` +
-					`border-left-color:${backgroundColor};` +
-					"}",
-			),
-		);
-		store.rules[className] = true;
-	}
-
-	function ensureDefaultPopupStyle(): void {
-		appendPopupStyleRule(defaultPopupClassName, {
-			backgroundColor: "Canvas",
-			textColor: "CanvasText",
-		});
-	}
-
-	function extractFeaturePopupText(feature: unknown): string | null {
-		const props =
-			feature &&
-			typeof feature === "object" &&
-			"properties" in feature &&
-			feature.properties &&
-			typeof feature.properties === "object"
-				? (feature.properties as Record<string, unknown>)
-				: null;
-
-		if (!props) {
-			return null;
-		}
-
-		return typeof props.popup === "string"
-			? props.popup
-			: typeof props.name === "string"
-				? props.name
-				: null;
-	}
-
-	function collectLngLatCoordinates(
-		input: unknown,
-		bucket: [number, number][],
-	): void {
-		if (!Array.isArray(input)) {
-			return;
-		}
-
-		if (
-			input.length >= 2 &&
-			typeof input[0] === "number" &&
-			typeof input[1] === "number"
-		) {
-			bucket.push([input[0], input[1]]);
-			return;
-		}
-
-		input.forEach((item) => collectLngLatCoordinates(item, bucket));
-	}
-
-	function collectGeoJsonLngLats(geojson: unknown): [number, number][] {
-		const points: [number, number][] = [];
-
-		function visit(node: unknown): void {
-			if (!node || typeof node !== "object") {
-				return;
-			}
-
-			const typedNode = node as Record<string, unknown>;
-			switch (typedNode.type) {
-				case "FeatureCollection":
-					(Array.isArray(typedNode.features) ? typedNode.features : []).forEach(
-						visit,
-					);
-					return;
-				case "Feature":
-					visit(typedNode.geometry);
-					return;
-				case "GeometryCollection":
-					(Array.isArray(typedNode.geometries)
-						? typedNode.geometries
-						: []
-					).forEach(visit);
-					return;
-				case "Point":
-				case "MultiPoint":
-				case "LineString":
-				case "MultiLineString":
-				case "Polygon":
-				case "MultiPolygon":
-					collectLngLatCoordinates(typedNode.coordinates, points);
-					return;
-			}
-		}
-
-		visit(geojson);
-		return points;
-	}
-
 	function buildMarkerOptions(
 		marker: Record<string, unknown>,
 	): Record<string, unknown> {
@@ -376,227 +169,81 @@ export function runMapView(
 		return options;
 	}
 
-	function buildPopupClassName(
-		marker: Record<string, unknown> | null,
-		popupKey: string,
-	): string {
-		ensureDefaultPopupStyle();
-
-		const classNames = [defaultPopupClassName];
-		if (
-			marker &&
-			typeof marker.popupClassName === "string" &&
-			marker.popupClassName
-		) {
-			classNames.push(marker.popupClassName);
-		}
-
-		if (
-			marker &&
-			(marker.popupBackgroundColor ||
-				marker.popupTextColor ||
-				marker.popupBorderColor)
-		) {
-			const generatedClassName =
-				"mapview-popup-" + sanitizeClassSegment(popupKey);
-			appendPopupStyleRule(generatedClassName, {
-				backgroundColor:
-					typeof marker.popupBackgroundColor === "string"
-						? marker.popupBackgroundColor
-						: undefined,
-				textColor:
-					typeof marker.popupTextColor === "string"
-						? marker.popupTextColor
-						: undefined,
-				borderColor:
-					typeof marker.popupBorderColor === "string"
-						? marker.popupBorderColor
-						: undefined,
-			});
-			classNames.push(generatedClassName);
-		}
-
-		return classNames.join(" ");
-	}
-
-	function buildPopupOptions(
-		marker: Record<string, unknown>,
-		popupClassName: string,
-	): Record<string, unknown> {
-		const options: Record<string, unknown> = {
-			offset: 25,
-			className: popupClassName,
-		};
-
-		if (typeof marker.popupMaxWidth === "string" && marker.popupMaxWidth) {
-			options.maxWidth = marker.popupMaxWidth;
-		}
-
-		return options;
-	}
-
-	function addMarker(
-		maplibregl: {
-			Marker: new (
-				options: Record<string, unknown>,
-			) => {
-				setLngLat: (coords: [number, number]) => unknown;
-				setPopup: (popup: unknown) => unknown;
-				addTo: (map: unknown) => void;
-				remove: () => void;
-			};
-			Popup: new (
-				options: Record<string, unknown>,
-			) => {
-				setText: (text: string) => unknown;
-			};
-		},
-		map: unknown,
-		markers: Record<string, unknown>[],
-		fitPoints: [number, number][],
-		markerStore: { remove: () => void }[],
-		markerGroupKey: string,
-	): void {
-		markers.forEach((marker, index) => {
-			const instance = new maplibregl.Marker(buildMarkerOptions(marker)) as {
-				setLngLat: (coords: [number, number]) => {
-					setPopup: (popup: unknown) => {
-						addTo: (map: unknown) => void;
-						remove: () => void;
-					};
-					addTo: (map: unknown) => void;
-					remove: () => void;
-				};
-				setPopup: (popup: unknown) => {
-					addTo: (map: unknown) => void;
-					remove: () => void;
-				};
-				addTo: (map: unknown) => void;
-				remove: () => void;
-			};
-			instance.setLngLat(toLngLat(marker.lat as number, marker.lon as number));
-
-			if (marker.popup || marker.label) {
-				const popupClassName = buildPopupClassName(
-					marker,
-					`${markerGroupKey}-${index}`,
-				);
-				instance.setPopup(
-					new maplibregl.Popup(
-						buildPopupOptions(marker, popupClassName),
-					).setText(String(marker.popup || marker.label)),
-				);
-			}
-
-			instance.addTo(map);
-			markerStore.push(instance);
-			fitPoints.push(toLngLat(marker.lat as number, marker.lon as number));
-		});
-	}
-
-	function registerPopupHandler(
-		maplibregl: {
-			Popup: new (
-				options: Record<string, unknown>,
-			) => {
-				setLngLat: (lngLat: unknown) => {
-					setText: (text: string) => { addTo: (map: unknown) => void };
-				};
-			};
-		},
-		map: {
-			on: (
-				eventName: string,
-				layerId: string,
-				handler: (event: any) => void,
-			) => void;
-			getCanvas: () => { style: { cursor: string } };
-		},
-		layerId: string,
-	): void {
-		map.on("click", layerId, (event) => {
-			const feature =
-				Array.isArray(event.features) && event.features.length > 0
-					? event.features[0]
-					: null;
-			const popupText = extractFeaturePopupText(feature);
-			if (!popupText) {
-				return;
-			}
-
-			new maplibregl.Popup({
-				offset: 12,
-				className: buildPopupClassName(null, layerId),
-			})
-				.setLngLat(event.lngLat)
-				.setText(String(popupText))
-				.addTo(map);
-		});
-
-		map.on("mouseenter", layerId, () => {
-			map.getCanvas().style.cursor = "pointer";
-		});
-
-		map.on("mouseleave", layerId, () => {
-			map.getCanvas().style.cursor = "";
-		});
-	}
-
 	function resolvedSourceStyle(
 		style: Record<string, unknown> | undefined,
-	): typeof DEFAULT_SOURCE_STYLE {
+	): RuntimeDefaults["sourceStyle"] {
 		return {
 			lineColor:
 				style && typeof style.lineColor === "string"
 					? style.lineColor
-					: defaultSourceStyle.lineColor,
+					: defaults.sourceStyle.lineColor,
 			lineWidth:
 				style && typeof style.lineWidth === "number"
 					? style.lineWidth
-					: defaultSourceStyle.lineWidth,
+					: defaults.sourceStyle.lineWidth,
 			lineOpacity:
 				style && typeof style.lineOpacity === "number"
 					? style.lineOpacity
-					: defaultSourceStyle.lineOpacity,
+					: defaults.sourceStyle.lineOpacity,
+			lineDasharray:
+				style &&
+				Array.isArray(style.lineDasharray) &&
+				style.lineDasharray.every((item) => typeof item === "number")
+					? (style.lineDasharray as number[])
+					: defaults.sourceStyle.lineDasharray,
 			fillColor:
 				style && typeof style.fillColor === "string"
 					? style.fillColor
-					: defaultSourceStyle.fillColor,
+					: defaults.sourceStyle.fillColor,
 			fillOpacity:
 				style && typeof style.fillOpacity === "number"
 					? style.fillOpacity
-					: defaultSourceStyle.fillOpacity,
+					: defaults.sourceStyle.fillOpacity,
 			pointColor:
 				style && typeof style.pointColor === "string"
 					? style.pointColor
-					: defaultSourceStyle.pointColor,
+					: defaults.sourceStyle.pointColor,
 			pointRadius:
 				style && typeof style.pointRadius === "number"
 					? style.pointRadius
-					: defaultSourceStyle.pointRadius,
+					: defaults.sourceStyle.pointRadius,
 			pointStrokeColor:
 				style && typeof style.pointStrokeColor === "string"
 					? style.pointStrokeColor
-					: defaultSourceStyle.pointStrokeColor,
+					: defaults.sourceStyle.pointStrokeColor,
 			pointStrokeWidth:
 				style && typeof style.pointStrokeWidth === "number"
 					? style.pointStrokeWidth
-					: defaultSourceStyle.pointStrokeWidth,
+					: defaults.sourceStyle.pointStrokeWidth,
+			labelColor:
+				style && typeof style.labelColor === "string"
+					? style.labelColor
+					: defaults.sourceStyle.labelColor,
+			labelHaloColor:
+				style && typeof style.labelHaloColor === "string"
+					? style.labelHaloColor
+					: defaults.sourceStyle.labelHaloColor,
+			labelHaloWidth:
+				style && typeof style.labelHaloWidth === "number"
+					? style.labelHaloWidth
+					: defaults.sourceStyle.labelHaloWidth,
+			labelSize:
+				style && typeof style.labelSize === "number"
+					? style.labelSize
+					: defaults.sourceStyle.labelSize,
 		};
 	}
 
 	function ensureGpxChevronImage(
-		map: {
-			hasImage?: (id: string) => boolean;
-			addImage: (
-				id: string,
-				image: HTMLCanvasElement | ImageData,
-				options?: Record<string, unknown>,
-			) => void;
-		},
+		map: MapLibreMapInstance,
 		color: string,
 	): string | null {
-		const imageId = `mapview-gpx-chevron-${sanitizeClassSegment(color) || "default"}`;
+		const imageId = `mapview-gpx-chevron-${
+			color
+				.toLowerCase()
+				.replace(/[^a-z0-9_-]+/g, "-")
+				.replace(/^-+|-+$/g, "") || "default"
+		}`;
 		if (typeof map.hasImage === "function" && map.hasImage(imageId)) {
 			return imageId;
 		}
@@ -635,21 +282,13 @@ export function runMapView(
 	}
 
 	function tryAddGpxDirectionLayer(
-		map: {
-			hasImage?: (id: string) => boolean;
-			addImage: (
-				id: string,
-				image: HTMLCanvasElement | ImageData,
-				options?: Record<string, unknown>,
-			) => void;
-			addLayer: (layer: Record<string, unknown>) => void;
-		},
+		map: MapLibreMapInstance,
 		sourceId: string,
 		layerPrefix: string,
 		style: Record<string, unknown> | undefined,
 	): void {
-		const resolvedStyle = resolvedSourceStyle(style);
-		const imageId = ensureGpxChevronImage(map, resolvedStyle.lineColor);
+		const sourceStyle = resolvedSourceStyle(style);
+		const imageId = ensureGpxChevronImage(map, sourceStyle.lineColor);
 		if (!imageId) {
 			return;
 		}
@@ -680,42 +319,101 @@ export function runMapView(
 		}
 	}
 
+	function addMarkers(
+		maplibregl: MapLibreApi,
+		map: MapLibreMapInstance,
+		markers: Record<string, unknown>[],
+		fitPoints: [number, number][],
+		markerStore: { remove: () => void }[],
+		markerGroupKey: string,
+	): void {
+		markers.forEach((marker, index) => {
+			const instance = new maplibregl.Marker(
+				buildMarkerOptions(marker),
+			) as MapLibreMarkerInstance;
+			instance.setLngLat(
+				viewHelpers.toLngLat(marker.lat as number, marker.lon as number),
+			);
+
+			if (marker.popup || marker.label) {
+				const popupClassName = popupHelpers.buildPopupClassName(
+					marker,
+					`${markerGroupKey}-${index}`,
+				);
+				instance.setPopup(
+					new maplibregl.Popup(
+						popupHelpers.buildPopupOptions(marker, popupClassName),
+					).setText(String(marker.popup || marker.label)),
+				);
+			}
+
+			instance.addTo(map);
+			markerStore.push(instance);
+			fitPoints.push(
+				viewHelpers.toLngLat(marker.lat as number, marker.lon as number),
+			);
+		});
+	}
+
+	function registerPopupHandler(
+		maplibregl: MapLibreApi,
+		map: MapLibreMapInstance,
+		layerId: string,
+		popupProperty?: string,
+	): void {
+		map.on("click", layerId, (event) => {
+			const typedEvent = event as { features?: unknown[]; lngLat?: unknown };
+			const feature =
+				Array.isArray(typedEvent.features) && typedEvent.features.length > 0
+					? typedEvent.features[0]
+					: null;
+			const popupText = featureHelpers.getFeaturePopupText(
+				feature,
+				popupProperty,
+			);
+			if (!popupText) {
+				return;
+			}
+
+			new maplibregl.Popup({
+				offset: 12,
+				className: popupHelpers.buildPopupClassName(null, layerId),
+			})
+				.setLngLat(typedEvent.lngLat)
+				.setText(popupText)
+				.addTo(map);
+		});
+
+		map.on("mouseenter", layerId, () => {
+			map.getCanvas().style.cursor = "pointer";
+		});
+
+		map.on("mouseleave", layerId, () => {
+			map.getCanvas().style.cursor = "";
+		});
+	}
+
 	function addGeoJsonLayers(
-		maplibregl: {
-			Popup: new (
-				options: Record<string, unknown>,
-			) => {
-				setLngLat: (lngLat: unknown) => {
-					setText: (text: string) => { addTo: (map: unknown) => void };
-				};
-			};
-		},
-		map: {
-			addSource: (id: string, source: Record<string, unknown>) => void;
-			addLayer: (layer: Record<string, unknown>) => void;
-			on: (
-				eventName: string,
-				layerId: string,
-				handler: (event: any) => void,
-			) => void;
-			getCanvas: () => { style: { cursor: string } };
-		},
+		maplibregl: MapLibreApi,
+		map: MapLibreMapInstance,
 		sourceId: string,
 		data: unknown,
 		layerPrefix: string,
 		fitPoints: [number, number][],
 		style: Record<string, unknown> | undefined,
-		options?: {
+		layerConfig: {
+			labelProperty?: string;
+			popupProperty?: string;
 			showDirection?: boolean;
+			showLabels?: boolean;
 		},
 	): void {
-		const coordinates = collectGeoJsonLngLats(data);
+		const coordinates = featureHelpers.collectGeoJsonLngLats(data);
 		if (coordinates.length === 0) {
 			throw new Error("GeoJSON Error: No renderable features found.");
 		}
 
-		const resolvedStyle = resolvedSourceStyle(style);
-
+		const sourceStyle = resolvedSourceStyle(style);
 		map.addSource(sourceId, {
 			type: "geojson",
 			data,
@@ -731,23 +429,28 @@ export function runMapView(
 			source: sourceId,
 			filter: ["==", ["geometry-type"], "Polygon"],
 			paint: {
-				"fill-color": resolvedStyle.fillColor,
-				"fill-opacity": resolvedStyle.fillOpacity,
+				"fill-color": sourceStyle.fillColor,
+				"fill-opacity": sourceStyle.fillOpacity,
 			},
 		});
+
+		const linePaint: Record<string, unknown> = {
+			"line-color": sourceStyle.lineColor,
+			"line-width": sourceStyle.lineWidth,
+			"line-opacity": sourceStyle.lineOpacity,
+		};
+		if (sourceStyle.lineDasharray.length > 0) {
+			linePaint["line-dasharray"] = sourceStyle.lineDasharray;
+		}
 
 		map.addLayer({
 			id: lineLayerId,
 			type: "line",
 			source: sourceId,
-			paint: {
-				"line-color": resolvedStyle.lineColor,
-				"line-width": resolvedStyle.lineWidth,
-				"line-opacity": resolvedStyle.lineOpacity,
-			},
+			paint: linePaint,
 		});
 
-		if (options?.showDirection) {
+		if (layerConfig.showDirection) {
 			tryAddGpxDirectionLayer(map, sourceId, layerPrefix, style);
 		}
 
@@ -757,18 +460,57 @@ export function runMapView(
 			source: sourceId,
 			filter: ["==", ["geometry-type"], "Point"],
 			paint: {
-				"circle-radius": resolvedStyle.pointRadius,
-				"circle-color": resolvedStyle.pointColor,
-				"circle-stroke-color": resolvedStyle.pointStrokeColor,
-				"circle-stroke-width": resolvedStyle.pointStrokeWidth,
+				"circle-radius": sourceStyle.pointRadius,
+				"circle-color": sourceStyle.pointColor,
+				"circle-stroke-color": sourceStyle.pointStrokeColor,
+				"circle-stroke-width": sourceStyle.pointStrokeWidth,
 			},
 		});
 
-		registerPopupHandler(maplibregl, map, fillLayerId);
-		registerPopupHandler(maplibregl, map, lineLayerId);
-		registerPopupHandler(maplibregl, map, pointLayerId);
+		if (layerConfig.showLabels || layerConfig.labelProperty) {
+			map.addLayer({
+				id: `${layerPrefix}-labels`,
+				type: "symbol",
+				source: sourceId,
+				filter: ["==", ["geometry-type"], "Point"],
+				layout: {
+					"text-field": featureHelpers.buildLabelTextExpression(
+						layerConfig.labelProperty,
+					),
+					"text-size": sourceStyle.labelSize,
+					"text-offset": [0, 1.1],
+					"text-anchor": "top",
+				},
+				paint: {
+					"text-color": sourceStyle.labelColor,
+					"text-halo-color": sourceStyle.labelHaloColor,
+					"text-halo-width": sourceStyle.labelHaloWidth,
+				},
+			});
+		}
 
-		coordinates.forEach((coordinate) => fitPoints.push(coordinate));
+		registerPopupHandler(
+			maplibregl,
+			map,
+			fillLayerId,
+			layerConfig.popupProperty,
+		);
+		registerPopupHandler(
+			maplibregl,
+			map,
+			lineLayerId,
+			layerConfig.popupProperty,
+		);
+		registerPopupHandler(
+			maplibregl,
+			map,
+			pointLayerId,
+			layerConfig.popupProperty,
+		);
+
+		coordinates.forEach((coordinate) => {
+			fitPoints.push(coordinate);
+		});
 	}
 
 	function cleanupExistingInstance(): void {
@@ -776,93 +518,59 @@ export function runMapView(
 			(globalThis as Record<string, unknown>)[mapStoreKey] = {};
 		}
 
-		const instances = (
-			globalThis as Record<
-				string,
-				Record<
-					string,
-					{ map?: { remove: () => void }; markers?: { remove: () => void }[] }
-				>
-			>
-		)[mapStoreKey];
+		const instances =
+			((globalThis as unknown as Record<string, unknown>)[mapStoreKey] as
+				| Record<
+						string,
+						{ map?: { remove: () => void }; markers?: { remove: () => void }[] }
+				  >
+				| undefined) ?? {};
 		const existing = instances[mapId];
 		if (!existing) {
 			return;
 		}
 
-		(existing.markers || []).forEach((marker) => marker.remove());
+		(existing.markers || []).forEach((marker) => {
+			marker.remove();
+		});
 		existing.map?.remove();
 		delete instances[mapId];
 	}
 
-	function initMap(maplibregl: {
-		Map: new (
-			options: Record<string, unknown>,
-		) => {
-			on: (eventName: string, handler: (event: any) => void) => void;
-			on: (
-				eventName: string,
-				layerId: string,
-				handler: (event: any) => void,
-			) => void;
-			once: (eventName: string, handler: () => void) => void;
-			off: (eventName: string, handler: (event: any) => void) => void;
-			addSource: (id: string, source: Record<string, unknown>) => void;
-			addLayer: (layer: Record<string, unknown>) => void;
-			getCanvas: () => { style: { cursor: string } };
-			remove: () => void;
-			jumpTo: (options: Record<string, unknown>) => void;
-			fitBounds: (
-				bounds: { extend: (point: [number, number]) => unknown },
-				options: Record<string, unknown>,
-			) => void;
-		};
-		Marker: new (options: Record<string, unknown>) => any;
-		Popup: new (options: Record<string, unknown>) => any;
-		LngLatBounds: new (
-			sw: [number, number],
-			ne: [number, number],
-		) => {
-			extend: (point: [number, number]) => unknown;
-			getSouthWest: () => { lng: number; lat: number };
-			getNorthEast: () => { lng: number; lat: number };
-		};
-	}): void {
+	function initMap(maplibregl: MapLibreApi): void {
 		const element = document.getElementById(mapId);
 		if (!element) {
 			return;
 		}
 
 		cleanupExistingInstance();
-		ensureDefaultPopupStyle();
+		popupHelpers.ensureDefaultPopupStyle();
 
-		const config = payload.config;
-		const hasExplicitCenter = Array.isArray(config.center);
-		const initialCenter = hasExplicitCenter
-			? toLngLat(config.center[0], config.center[1])
-			: [0, 0];
-		const initialZoom =
-			hasExplicitCenter && typeof config.zoom === "number" ? config.zoom : 1;
-
+		const initialView = viewHelpers.resolveInitialView(payload.config);
 		const map = new maplibregl.Map({
 			container: mapId,
 			style: payload.styleUrl,
-			center: initialCenter,
-			zoom: initialZoom,
+			center: initialView.initialCenter,
+			zoom: initialView.initialZoom,
 		});
 
 		const markerStore: { remove: () => void }[] = [];
-		((globalThis as Record<string, Record<string, unknown>>)[mapStoreKey] ??=
-			{})[mapId] = { map, markers: markerStore };
+		const mapInstances =
+			((globalThis as Record<string, unknown>)[mapStoreKey] as
+				| Record<string, unknown>
+				| undefined) ?? {};
+		mapInstances[mapId] = { map, markers: markerStore };
+		(globalThis as Record<string, unknown>)[mapStoreKey] = mapInstances;
 
 		let initialized = false;
-		const initialErrorHandler = (event: { error?: { message?: string } }) => {
+		const initialErrorHandler = (event: unknown) => {
 			if (initialized) {
 				return;
 			}
 
-			const message = event?.error?.message
-				? event.error.message
+			const typedEvent = event as { error?: { message?: string } };
+			const message = typedEvent.error?.message
+				? typedEvent.error.message
 				: "Unable to load MapLibre style.";
 			renderError(`Map Error: ${message}`);
 			cleanupExistingInstance();
@@ -877,28 +585,45 @@ export function runMapView(
 			try {
 				const fitPoints: [number, number][] = [];
 
-				payload.sourceData.forEach((sourceData, index) => {
-					if (sourceData.kind === "gpx") {
-						if (sourceData.trackGeoJson) {
+				payload.layers.forEach((layer, index) => {
+					if (layer.kind === "markers") {
+						addMarkers(
+							maplibregl,
+							map,
+							layer.markers as Record<string, unknown>[],
+							fitPoints,
+							markerStore,
+							layer.id || `${mapId}-markers-${index}`,
+						);
+						return;
+					}
+
+					if (layer.sourceData.kind === "gpx") {
+						if (layer.sourceData.trackGeoJson) {
 							addGeoJsonLayers(
 								maplibregl,
 								map,
 								`${mapId}-gpx-source-${index}`,
-								sourceData.trackGeoJson,
-								`${mapId}-gpx-${index}`,
+								layer.sourceData.trackGeoJson,
+								layer.id || `${mapId}-gpx-${index}`,
 								fitPoints,
-								sourceData.style,
-								{ showDirection: true },
+								layer.sourceData.style,
+								{
+									popupProperty: layer.popupProperty,
+									showDirection: layer.showDirection,
+									showLabels: layer.showLabels,
+									labelProperty: layer.labelProperty,
+								},
 							);
 						}
 
-						addMarker(
+						addMarkers(
 							maplibregl,
 							map,
-							sourceData.markers as Record<string, unknown>[],
+							layer.sourceData.markers as Record<string, unknown>[],
 							fitPoints,
 							markerStore,
-							`${mapId}-gpx-${index}`,
+							layer.id || `${mapId}-gpx-markers-${index}`,
 						);
 						return;
 					}
@@ -907,57 +632,45 @@ export function runMapView(
 						maplibregl,
 						map,
 						`${mapId}-geojson-source-${index}`,
-						sourceData.data,
-						`${mapId}-geojson-${index}`,
+						layer.sourceData.data,
+						layer.id || `${mapId}-geojson-${index}`,
 						fitPoints,
-						sourceData.style,
+						layer.sourceData.style,
+						{
+							popupProperty: layer.popupProperty,
+							showLabels: layer.showLabels,
+							labelProperty: layer.labelProperty,
+						},
 					);
 				});
 
-				addMarker(
-					maplibregl,
-					map,
-					config.markers as Record<string, unknown>[],
+				const fitAction = viewHelpers.resolveFitAction(
+					payload.config,
 					fitPoints,
-					markerStore,
-					`${mapId}-manual`,
+					defaults.zoom,
 				);
+				if (fitAction.kind === "noop") {
+					return;
+				}
 
-				if (hasExplicitCenter) {
+				if (fitAction.kind === "jumpTo") {
 					map.jumpTo({
-						center: toLngLat(config.center[0], config.center[1]),
-						zoom: typeof config.zoom === "number" ? config.zoom : defaults.zoom,
+						center: fitAction.center,
+						zoom: fitAction.zoom,
 					});
 					return;
 				}
 
-				if (!config.autoFit || fitPoints.length === 0) {
+				const firstPoint = fitPoints[0];
+				if (!firstPoint) {
 					return;
 				}
-
 				const bounds = fitPoints.reduce(
-					(acc, point) => acc.extend(point),
-					new maplibregl.LngLatBounds(fitPoints[0], fitPoints[0]),
-				) as {
-					getSouthWest: () => { lng: number; lat: number };
-					getNorthEast: () => { lng: number; lat: number };
-				};
-
-				const southWest = bounds.getSouthWest();
-				const northEast = bounds.getNorthEast();
-				if (
-					southWest.lng === northEast.lng &&
-					southWest.lat === northEast.lat
-				) {
-					map.jumpTo({
-						center: [southWest.lng, southWest.lat],
-						zoom: defaults.zoom,
-					});
-					return;
-				}
-
-				map.fitBounds(bounds as never, {
-					padding: config.fitPadding,
+					(accumulator, point) => accumulator.extend(point),
+					new maplibregl.LngLatBounds(firstPoint, firstPoint),
+				);
+				map.fitBounds(bounds, {
+					padding: fitAction.padding,
 					duration: 0,
 				});
 			} catch (error) {
@@ -969,8 +682,11 @@ export function runMapView(
 		});
 	}
 
-	loadMapLibre()
-		.then((maplibregl) => initMap(maplibregl as never))
+	mapLibreAssets
+		.loadMapLibre(payload.maplibreVersion, payload.maplibreAssetBaseUrl)
+		.then((maplibregl) => {
+			initMap(maplibregl as MapLibreApi);
+		})
 		.catch((error) => {
 			const message =
 				error instanceof Error ? error.message : "Unable to initialize map.";

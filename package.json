@@ -1,11 +1,19 @@
 {
   "name": "silverbullet-plug-mapview",
   "version": "0.1.0",
-  "private": true,
   "description": "SilverBullet plug for rendering GPX, GeoJSON, and manual marker maps with MapLibre GL JS",
+  "files": [
+    "mapview.plug.js",
+    "PLUG.md",
+    "README.md"
+  ],
   "scripts": {
     "build": "npx plug-compile mapview.yaml",
-    "format": "npx @biomejs/biome check --write"
+    "lint": "npx @biomejs/biome check .",
+    "format": "npx @biomejs/biome check . --write",
+    "typecheck": "npx tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "node --no-warnings --experimental-strip-types test/run.ts",
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
   "dependencies": {
     "@silverbulletmd/silverbullet": "^2.5.3",
@@ -13,6 +21,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
-    "maplibre-gl": "^5.21.1"
+    "@types/node": "^25.5.0",
+    "maplibre-gl": "^5.21.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
   }
 }

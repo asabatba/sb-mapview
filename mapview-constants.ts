@@ -19,11 +19,16 @@ export const DEFAULT_SOURCE_STYLE: Required<Omit<SourceStyle, "markerColor">> =
 		lineColor: DEFAULT_SOURCE_LINE_COLORS[0],
 		lineWidth: 3,
 		lineOpacity: 0.9,
+		lineDasharray: [],
 		fillColor: "#3b82f6",
 		fillOpacity: 0.18,
 		pointColor: "#dc2626",
 		pointRadius: 6,
 		pointStrokeColor: "#ffffff",
 		pointStrokeWidth: 2,
+		labelColor: "#111827",
+		labelHaloColor: "#ffffff",
+		labelHaloWidth: 1.5,
+		labelSize: 12,
 	};
-export const MAPLIBRE_VERSION = "5.21.0";
+export const MAPLIBRE_VERSION = "5.21.1";

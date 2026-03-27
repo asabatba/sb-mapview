@@ -1,0 +1,18 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"baseUrl": ".",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"paths": {
+			"@silverbulletmd/silverbullet/syscalls": [
+				"./types/silverbullet-syscalls.d.ts"
+			]
+		}
+	},
+	"include": [
+		"*.ts",
+		"test/**/*.ts",
+		"types/**/*.d.ts"
+	]
+}

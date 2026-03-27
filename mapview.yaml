@@ -9,6 +9,24 @@ functions:
       name: "MapView: Insert Widget"
       requireMode: rw
 
+  insertMapViewGpx:
+    path: ./mapview.ts:insertMapViewGpx
+    command:
+      name: "MapView: Insert GPX Widget"
+      requireMode: rw
+
+  insertMapViewGeoJson:
+    path: ./mapview.ts:insertMapViewGeoJson
+    command:
+      name: "MapView: Insert GeoJSON Widget"
+      requireMode: rw
+
+  insertMapViewMarkers:
+    path: ./mapview.ts:insertMapViewMarkers
+    command:
+      name: "MapView: Insert Marker Widget"
+      requireMode: rw
+
   renderMapViewWidget:
     path: ./mapview.ts:renderMapViewWidget
     codeWidget: mapview

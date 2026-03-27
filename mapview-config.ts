@@ -5,11 +5,13 @@ import {
 } from "./mapview-constants.ts";
 import type {
 	Coordinate,
+	FileLayerConfig,
+	LayerConfig,
 	MapConfig,
 	MarkerConfig,
+	MarkerLayerConfig,
 	MarkerStyle,
 	RawMapConfig,
-	SourceEntry,
 	SourceStyle,
 } from "./mapview-types.ts";
 import { asString } from "./mapview-utils.ts";
@@ -105,6 +107,25 @@ function parsePositiveNumberField(
 	return numberValue;
 }
 
+function parseNonNegativeNumberField(
+	value: unknown,
+	fieldName: string,
+	context: string,
+): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	const numberValue = Number(value);
+	if (!Number.isFinite(numberValue) || numberValue < 0) {
+		throw new Error(
+			`${context}: \`${fieldName}\` must be a non-negative number.`,
+		);
+	}
+
+	return numberValue;
+}
+
 function parseOpacityField(
 	value: unknown,
 	fieldName: string,
@@ -150,6 +171,31 @@ function parseBooleanField(
 	throw new Error(`${context}: \`${fieldName}\` must be a boolean.`);
 }
 
+function parseNumberArrayField(
+	value: unknown,
+	fieldName: string,
+	context: string,
+): number[] | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	if (!Array.isArray(value)) {
+		throw new Error(
+			`${context}: \`${fieldName}\` must be an array of numbers.`,
+		);
+	}
+
+	const values = value.map((item) => Number(item));
+	if (values.some((item) => !Number.isFinite(item) || item <= 0)) {
+		throw new Error(
+			`${context}: \`${fieldName}\` must contain only positive numbers.`,
+		);
+	}
+
+	return values;
+}
+
 function normalizeSourceStyle(value: unknown, context: string): SourceStyle {
 	if (value === undefined) {
 		return {};
@@ -170,6 +216,11 @@ function normalizeSourceStyle(value: unknown, context: string): SourceStyle {
 		lineOpacity: parseOpacityField(
 			rawStyle.lineOpacity,
 			"lineOpacity",
+			context,
+		),
+		lineDasharray: parseNumberArrayField(
+			rawStyle.lineDasharray,
+			"lineDasharray",
 			context,
 		),
 		fillColor: parseColorField(rawStyle.fillColor, "fillColor", context),
@@ -195,6 +246,22 @@ function normalizeSourceStyle(value: unknown, context: string): SourceStyle {
 			context,
 		),
 		markerColor: parseColorField(rawStyle.markerColor, "markerColor", context),
+		labelColor: parseColorField(rawStyle.labelColor, "labelColor", context),
+		labelHaloColor: parseColorField(
+			rawStyle.labelHaloColor,
+			"labelHaloColor",
+			context,
+		),
+		labelHaloWidth: parseNonNegativeNumberField(
+			rawStyle.labelHaloWidth,
+			"labelHaloWidth",
+			context,
+		),
+		labelSize: parsePositiveNumberField(
+			rawStyle.labelSize,
+			"labelSize",
+			context,
+		),
 	};
 }
 
@@ -297,18 +364,19 @@ function markerStyleFromRecord(
 function normalizeMarkers(
 	value: unknown,
 	defaultStyle: MarkerStyle,
+	context = "`markers`",
 ): MarkerConfig[] {
 	if (value === undefined) {
 		return [];
 	}
 
 	if (!Array.isArray(value)) {
-		throw new Error("`markers` must be an array of marker objects.");
+		throw new Error(`${context} must be an array of marker objects.`);
 	}
 
 	return value.map((marker, index) => {
 		if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
-			throw new Error(`Marker ${index + 1} must be an object.`);
+			throw new Error(`${context}: marker ${index + 1} must be an object.`);
 		}
 
 		const rawMarker = marker as Record<string, unknown>;
@@ -316,13 +384,13 @@ function normalizeMarkers(
 		const lon = Number(rawMarker.lon);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
 			throw new Error(
-				`Marker ${index + 1} must include numeric \`lat\` and \`lon\`.`,
+				`${context}: marker ${index + 1} must include numeric \`lat\` and \`lon\`.`,
 			);
 		}
 
 		const markerStyle = mergeMarkerStyle(
 			defaultStyle,
-			markerStyleFromRecord(rawMarker, `Marker ${index + 1}`),
+			markerStyleFromRecord(rawMarker, `${context}: marker ${index + 1}`),
 		);
 
 		return {
@@ -341,77 +409,244 @@ function normalizeMarkers(
 	});
 }
 
-function normalizeSourceEntry(
-	sourceValue: unknown,
+function parseOptionalId(
+	value: unknown,
+	fieldName: string,
+	context: string,
+): string | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	const id = asString(value);
+	if (!id) {
+		throw new Error(`${context}: \`${fieldName}\` must be a non-empty string.`);
+	}
+
+	return id;
+}
+
+function normalizeFileLayer(
+	rawLayer: string | Record<string, unknown>,
 	index: number,
 	defaultStyle: SourceStyle,
-): SourceEntry {
-	if (typeof sourceValue === "string") {
-		const path = asString(sourceValue);
+	defaultSourceCacheTtlMs: number,
+): FileLayerConfig {
+	if (typeof rawLayer === "string") {
+		const path = asString(rawLayer);
 		if (!path) {
-			throw new Error(`Source ${index + 1} must be a non-empty string.`);
+			throw new Error(`Layer ${index + 1} must be a non-empty string path.`);
 		}
 
 		return {
+			kind: "file",
 			path,
 			style: defaultStyle,
+			visible: true,
+			showLabels: false,
+			showDirection: true,
+			sourceCacheTtlMs: defaultSourceCacheTtlMs,
 		};
 	}
 
-	if (
-		!sourceValue ||
-		typeof sourceValue !== "object" ||
-		Array.isArray(sourceValue)
-	) {
-		throw new Error(
-			`Source ${index + 1} must be a string path or an object with \`path\`.`,
-		);
-	}
-
-	const rawSource = sourceValue as Record<string, unknown>;
-	const path = asString(rawSource.path);
+	const path = asString(rawLayer.path);
 	if (!path) {
-		throw new Error(`Source ${index + 1} must include a non-empty \`path\`.`);
+		throw new Error(`Layer ${index + 1} must include a non-empty \`path\`.`);
 	}
 
 	return {
+		kind: "file",
+		id: parseOptionalId(rawLayer.id, "id", `Layer ${index + 1}`),
 		path,
 		style: mergeSourceStyle(
 			defaultStyle,
-			normalizeSourceStyle(rawSource.style, `Source ${index + 1} style`),
+			normalizeSourceStyle(rawLayer.style, `Layer ${index + 1} style`),
+		),
+		visible:
+			parseBooleanField(rawLayer.visible, "visible", `Layer ${index + 1}`) ??
+			true,
+		popupProperty: parseStringField(
+			rawLayer.popupProperty,
+			"popupProperty",
+			`Layer ${index + 1}`,
+		),
+		labelProperty: parseStringField(
+			rawLayer.labelProperty,
+			"labelProperty",
+			`Layer ${index + 1}`,
+		),
+		showLabels:
+			parseBooleanField(
+				rawLayer.showLabels,
+				"showLabels",
+				`Layer ${index + 1}`,
+			) ?? false,
+		showDirection:
+			parseBooleanField(
+				rawLayer.showDirection,
+				"showDirection",
+				`Layer ${index + 1}`,
+			) ?? true,
+		sourceCacheTtlMs:
+			parseNonNegativeNumberField(
+				rawLayer.sourceCacheTtlMs,
+				"sourceCacheTtlMs",
+				`Layer ${index + 1}`,
+			) ?? defaultSourceCacheTtlMs,
+	};
+}
+
+function normalizeMarkerLayer(
+	rawLayer: Record<string, unknown>,
+	index: number,
+	defaultStyle: MarkerStyle,
+): MarkerLayerConfig {
+	return {
+		kind: "markers",
+		id: parseOptionalId(rawLayer.id, "id", `Layer ${index + 1}`),
+		visible:
+			parseBooleanField(rawLayer.visible, "visible", `Layer ${index + 1}`) ??
+			true,
+		style: mergeMarkerStyle(
+			defaultStyle,
+			normalizeMarkerStyle(rawLayer.style, `Layer ${index + 1} style`),
+		),
+		markers: normalizeMarkers(
+			rawLayer.markers,
+			mergeMarkerStyle(
+				defaultStyle,
+				normalizeMarkerStyle(rawLayer.style, `Layer ${index + 1} style`),
+			),
+			`Layer ${index + 1} \`markers\``,
 		),
 	};
 }
 
-function normalizeSources(
+function normalizeLayerEntry(
+	layerValue: unknown,
+	index: number,
+	defaultSourceStyle: SourceStyle,
+	defaultMarkerStyle: MarkerStyle,
+	defaultSourceCacheTtlMs: number,
+): LayerConfig {
+	if (typeof layerValue === "string") {
+		return normalizeFileLayer(
+			layerValue,
+			index,
+			defaultSourceStyle,
+			defaultSourceCacheTtlMs,
+		);
+	}
+
+	if (
+		!layerValue ||
+		typeof layerValue !== "object" ||
+		Array.isArray(layerValue)
+	) {
+		throw new Error(
+			`Layer ${index + 1} must be a string path or an object describing a layer.`,
+		);
+	}
+
+	const rawLayer = layerValue as Record<string, unknown>;
+	const rawKind = asString(rawLayer.kind);
+	if (rawKind && rawKind !== "file" && rawKind !== "markers") {
+		throw new Error(
+			`Layer ${index + 1}: \`kind\` must be either \`file\` or \`markers\`.`,
+		);
+	}
+
+	const isMarkerLayer =
+		rawKind === "markers" || ("markers" in rawLayer && !("path" in rawLayer));
+	if (isMarkerLayer) {
+		return normalizeMarkerLayer(rawLayer, index, defaultMarkerStyle);
+	}
+
+	return normalizeFileLayer(
+		rawLayer,
+		index,
+		defaultSourceStyle,
+		defaultSourceCacheTtlMs,
+	);
+}
+
+function normalizeLayers(
+	rawLayers: unknown,
+	defaultSourceStyle: SourceStyle,
+	defaultMarkerStyle: MarkerStyle,
+	defaultSourceCacheTtlMs: number,
+): LayerConfig[] {
+	if (rawLayers === undefined) {
+		return [];
+	}
+
+	if (!Array.isArray(rawLayers)) {
+		throw new Error("`layers` must be an array.");
+	}
+
+	return rawLayers.map((layer, index) =>
+		normalizeLayerEntry(
+			layer,
+			index,
+			defaultSourceStyle,
+			defaultMarkerStyle,
+			defaultSourceCacheTtlMs,
+		),
+	);
+}
+
+function normalizeLegacySourceLayers(
 	sourceValue: unknown,
-	defaultStyle: SourceStyle,
-): SourceEntry[] {
+	defaultSourceStyle: SourceStyle,
+	defaultSourceCacheTtlMs: number,
+): FileLayerConfig[] {
 	if (sourceValue === undefined) {
 		return [];
 	}
 
 	if (Array.isArray(sourceValue)) {
 		return sourceValue.map((source, index) =>
-			normalizeSourceEntry(source, index, defaultStyle),
+			normalizeFileLayer(
+				typeof source === "string"
+					? source
+					: (source as Record<string, unknown>),
+				index,
+				defaultSourceStyle,
+				defaultSourceCacheTtlMs,
+			),
 		);
 	}
 
-	return [normalizeSourceEntry(sourceValue, 0, defaultStyle)];
+	return [
+		normalizeFileLayer(
+			typeof sourceValue === "string"
+				? sourceValue
+				: (sourceValue as Record<string, unknown>),
+			0,
+			defaultSourceStyle,
+			defaultSourceCacheTtlMs,
+		),
+	];
 }
 
-function assignDefaultSourceLineColors(sources: SourceEntry[]): SourceEntry[] {
-	return sources.map((source, index) => {
-		if (source.style.lineColor !== undefined) {
-			return source;
+function assignDefaultSourceLineColors(layers: LayerConfig[]): LayerConfig[] {
+	let colorIndex = 0;
+	return layers.map((layer) => {
+		if (layer.kind !== "file" || layer.style.lineColor !== undefined) {
+			return layer;
 		}
 
+		const lineColor =
+			DEFAULT_SOURCE_LINE_COLORS[
+				colorIndex % DEFAULT_SOURCE_LINE_COLORS.length
+			];
+		colorIndex += 1;
+
 		return {
-			...source,
+			...layer,
 			style: {
-				...source.style,
-				lineColor:
-					DEFAULT_SOURCE_LINE_COLORS[index % DEFAULT_SOURCE_LINE_COLORS.length],
+				...layer.style,
+				lineColor,
 			},
 		};
 	});
@@ -426,7 +661,6 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		rawConfig.markerStyle,
 		"`markerStyle`",
 	);
-	const sources = normalizeSources(rawConfig.source, sourceStyle);
 	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
 	const center =
 		rawConfig.center === undefined ? undefined : asCoordinate(rawConfig.center);
@@ -464,17 +698,60 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		throw new Error("`maplibreVersion` must be a non-empty string.");
 	}
 
+	const maplibreAssetBaseUrl =
+		rawConfig.maplibreAssetBaseUrl === undefined
+			? undefined
+			: asString(rawConfig.maplibreAssetBaseUrl);
+	if (rawConfig.maplibreAssetBaseUrl !== undefined && !maplibreAssetBaseUrl) {
+		throw new Error("`maplibreAssetBaseUrl` must be a non-empty string.");
+	}
+
+	const sourceCacheTtlMs =
+		parseNonNegativeNumberField(
+			rawConfig.sourceCacheTtlMs,
+			"sourceCacheTtlMs",
+			"`sourceCacheTtlMs`",
+		) ?? 0;
+
+	const explicitLayers = normalizeLayers(
+		rawConfig.layers,
+		sourceStyle,
+		markerStyle,
+		sourceCacheTtlMs,
+	);
+	const legacySourceLayers = normalizeLegacySourceLayers(
+		rawConfig.source,
+		sourceStyle,
+		sourceCacheTtlMs,
+	);
+	const legacyMarkerLayer =
+		rawConfig.markers === undefined
+			? []
+			: [
+					{
+						kind: "markers" as const,
+						visible: true,
+						style: markerStyle,
+						markers: normalizeMarkers(rawConfig.markers, markerStyle),
+					},
+				];
+
 	return {
-		sources: assignDefaultSourceLineColors(sources),
+		layers: assignDefaultSourceLineColors([
+			...explicitLayers,
+			...legacySourceLayers,
+			...legacyMarkerLayer,
+		]),
 		height,
 		center,
 		zoom,
-		markers: normalizeMarkers(rawConfig.markers, markerStyle),
 		styleUrl,
 		sourceStyle,
 		markerStyle,
 		fitPadding,
 		autoFit: autoFit ?? true,
 		maplibreVersion,
+		maplibreAssetBaseUrl,
+		sourceCacheTtlMs,
 	};
 }

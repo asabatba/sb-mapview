@@ -16,6 +16,7 @@ export type PopupStyle = {
 
 export type RawMapConfig = {
 	source?: unknown;
+	layers?: unknown;
 	height?: unknown;
 	center?: unknown;
 	zoom?: unknown;
@@ -26,12 +27,15 @@ export type RawMapConfig = {
 	fitPadding?: unknown;
 	autoFit?: unknown;
 	maplibreVersion?: unknown;
+	maplibreAssetBaseUrl?: unknown;
+	sourceCacheTtlMs?: unknown;
 };
 
 export type SourceStyle = {
 	lineColor?: string;
 	lineWidth?: number;
 	lineOpacity?: number;
+	lineDasharray?: number[];
 	fillColor?: string;
 	fillOpacity?: number;
 	pointColor?: string;
@@ -39,6 +43,10 @@ export type SourceStyle = {
 	pointStrokeColor?: string;
 	pointStrokeWidth?: number;
 	markerColor?: string;
+	labelColor?: string;
+	labelHaloColor?: string;
+	labelHaloWidth?: number;
+	labelSize?: number;
 };
 
 export type MarkerStyle = SupportedMarkerOptions &
@@ -57,23 +65,42 @@ export type MarkerConfig = PopupStyle &
 		popupMaxWidth?: SupportedPopupOptions["maxWidth"];
 	};
 
-export type SourceEntry = {
+export type FileLayerConfig = {
+	kind: "file";
+	id?: string;
 	path: string;
 	style: SourceStyle;
+	visible: boolean;
+	popupProperty?: string;
+	labelProperty?: string;
+	showLabels: boolean;
+	showDirection: boolean;
+	sourceCacheTtlMs: number;
 };
 
+export type MarkerLayerConfig = {
+	kind: "markers";
+	id?: string;
+	visible: boolean;
+	markers: MarkerConfig[];
+	style: MarkerStyle;
+};
+
+export type LayerConfig = FileLayerConfig | MarkerLayerConfig;
+
 export type MapConfig = {
-	sources: SourceEntry[];
+	layers: LayerConfig[];
 	height: string;
 	center?: Coordinate;
 	zoom?: number;
-	markers: MarkerConfig[];
 	styleUrl?: string;
 	sourceStyle: SourceStyle;
 	markerStyle: MarkerStyle;
 	fitPadding: number;
 	autoFit: boolean;
 	maplibreVersion?: string;
+	maplibreAssetBaseUrl?: string;
+	sourceCacheTtlMs: number;
 };
 
 export type GeoJsonData = Record<string, unknown>;
@@ -93,11 +120,20 @@ export type GeoJsonSourceData = {
 
 export type MapSourceData = GpxSourceData | GeoJsonSourceData;
 
+export type RenderFileLayer = FileLayerConfig & {
+	sourceData: MapSourceData;
+};
+
+export type RenderMarkerLayer = MarkerLayerConfig;
+
+export type RenderLayer = RenderFileLayer | RenderMarkerLayer;
+
 export type RenderPayload = {
 	config: MapConfig;
-	sourceData: MapSourceData[];
+	layers: RenderLayer[];
 	styleUrl: string;
 	maplibreVersion: string;
+	maplibreAssetBaseUrl?: string;
 };
 
 export type WidgetRenderResult = {
