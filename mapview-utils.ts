@@ -11,15 +11,6 @@ export function escapeHtml(value: string): string {
 		.replaceAll("'", "&#39;");
 }
 
-export function decodeXmlEntities(value: string): string {
-	return value
-		.replaceAll("&amp;", "&")
-		.replaceAll("&lt;", "<")
-		.replaceAll("&gt;", ">")
-		.replaceAll("&quot;", '"')
-		.replaceAll("&apos;", "'");
-}
-
 export function buildError(message: string): WidgetRenderResult {
 	return {
 		html: `<pre style="color: #b42318; background: #fef3f2; padding: 0.75rem; border: 1px solid #fecdca; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(

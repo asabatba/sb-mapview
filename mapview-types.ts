@@ -16,7 +16,6 @@ export type PopupStyle = {
 
 export type RawMapConfig = {
 	source?: unknown;
-	url?: unknown;
 	height?: unknown;
 	center?: unknown;
 	zoom?: unknown;
@@ -60,7 +59,6 @@ export type MarkerConfig = PopupStyle &
 
 export type SourceEntry = {
 	path: string;
-	label?: string;
 	style: SourceStyle;
 };
 

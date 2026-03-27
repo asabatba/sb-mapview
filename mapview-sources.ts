@@ -1,5 +1,5 @@
 import { space } from "@silverbulletmd/silverbullet/syscalls";
-import { filter, parse } from "txml/txml";
+import { XMLParser } from "fast-xml-parser";
 
 import type {
 	Coordinate,
@@ -9,34 +9,51 @@ import type {
 	SourceEntry,
 } from "./mapview-types.ts";
 
-type TxmlNode = {
-	tagName: string;
-	attributes: Record<string, string | boolean>;
-	children: (TxmlNode | string)[];
+type XmlObject = Record<string, unknown>;
+type GpxRoot = {
+	trk?: unknown;
+	wpt?: unknown;
 };
 
-function localName(tagName: string): string {
-	const colon = tagName.lastIndexOf(":");
-	return colon === -1 ? tagName : tagName.slice(colon + 1);
+const xmlParser = new XMLParser({
+	ignoreAttributes: false,
+	attributeNamePrefix: "",
+	removeNSPrefix: true,
+	parseTagValue: false,
+	parseAttributeValue: false,
+	trimValues: true,
+	isArray: (_tagName, jPath) =>
+		jPath === "gpx.trk" ||
+		jPath === "gpx.trk.trkseg" ||
+		jPath === "gpx.trk.trkseg.trkpt" ||
+		jPath === "gpx.trk.trkpt" ||
+		jPath === "gpx.wpt",
+});
+
+function asArray<T>(value: T | T[] | undefined): T[] {
+	if (value === undefined) {
+		return [];
+	}
+
+	return Array.isArray(value) ? value : [value];
 }
 
-function nodeLocalName(node: TxmlNode, name: string): boolean {
-	return localName(node.tagName).toLowerCase() === name;
+function asXmlObject(value: unknown): XmlObject | undefined {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as XmlObject)
+		: undefined;
 }
 
-function textContent(node: TxmlNode): string {
-	return node.children
-		.filter((c): c is string => typeof c === "string")
-		.join("")
-		.trim();
+function asText(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function parseTrackPoints(nodes: TxmlNode[]): Coordinate[] {
+function parseTrackPoints(nodes: XmlObject[]): Coordinate[] {
 	const trackPoints: Coordinate[] = [];
 
 	for (const node of nodes) {
-		const lat = Number.parseFloat(String(node.attributes.lat ?? ""));
-		const lon = Number.parseFloat(String(node.attributes.lon ?? ""));
+		const lat = Number.parseFloat(String(node.lat ?? ""));
+		const lon = Number.parseFloat(String(node.lon ?? ""));
 		if (Number.isFinite(lat) && Number.isFinite(lon)) {
 			trackPoints.push([lat, lon]);
 		}
@@ -49,64 +66,53 @@ function parseGpxContent(
 	gpxContent: string,
 	markerColor: string | undefined,
 ): { trackSegments: Coordinate[][]; waypoints: MarkerConfig[] } | null {
-	const nodes = parse(gpxContent) as (TxmlNode | string)[];
+	let parsed: unknown;
+	try {
+		parsed = xmlParser.parse(gpxContent);
+	} catch {
+		return null;
+	}
 
-	const gpxRoots = filter(nodes, (node: TxmlNode) =>
-		nodeLocalName(node, "gpx"),
-	);
-	if (gpxRoots.length === 0) {
+	const gpxRoot = asXmlObject(parsed)?.gpx as GpxRoot | undefined;
+	if (!gpxRoot || typeof gpxRoot !== "object") {
 		return null;
 	}
 
 	const trackSegments: Coordinate[][] = [];
-	for (const gpxRoot of gpxRoots as TxmlNode[]) {
-		const tracks = filter([gpxRoot], (node: TxmlNode) =>
-			nodeLocalName(node, "trk"),
-		) as TxmlNode[];
+	for (const track of asArray(gpxRoot.trk).map(asXmlObject).filter(Boolean)) {
+		const segments = asArray(track.trkseg).map(asXmlObject).filter(Boolean);
 
-		for (const track of tracks) {
-			const segments = filter([track], (node: TxmlNode) =>
-				nodeLocalName(node, "trkseg"),
-			) as TxmlNode[];
-
-			if (segments.length === 0) {
-				const trackPoints = parseTrackPoints(
-					filter([track], (node: TxmlNode) =>
-						nodeLocalName(node, "trkpt"),
-					) as TxmlNode[],
-				);
-				if (trackPoints.length > 0) {
-					trackSegments.push(trackPoints);
-				}
-				continue;
+		if (segments.length === 0) {
+			const trackPoints = parseTrackPoints(
+				asArray(track.trkpt).map(asXmlObject).filter(Boolean),
+			);
+			if (trackPoints.length > 0) {
+				trackSegments.push(trackPoints);
 			}
+			continue;
+		}
 
-			for (const segment of segments) {
-				const segmentPoints = parseTrackPoints(
-					filter([segment], (node: TxmlNode) =>
-						nodeLocalName(node, "trkpt"),
-					) as TxmlNode[],
-				);
-				if (segmentPoints.length > 0) {
-					trackSegments.push(segmentPoints);
-				}
+		for (const segment of segments) {
+			const segmentPoints = parseTrackPoints(
+				asArray(segment.trkpt).map(asXmlObject).filter(Boolean),
+			);
+			if (segmentPoints.length > 0) {
+				trackSegments.push(segmentPoints);
 			}
 		}
 	}
 
-	const wpts = filter(nodes, (node: TxmlNode) => nodeLocalName(node, "wpt"));
 	const waypoints: MarkerConfig[] = [];
-	for (const node of wpts as TxmlNode[]) {
-		const lat = Number.parseFloat(String(node.attributes.lat ?? ""));
-		const lon = Number.parseFloat(String(node.attributes.lon ?? ""));
+	for (const waypoint of asArray(gpxRoot.wpt)
+		.map(asXmlObject)
+		.filter(Boolean)) {
+		const lat = Number.parseFloat(String(waypoint.lat ?? ""));
+		const lon = Number.parseFloat(String(waypoint.lon ?? ""));
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
 			continue;
 		}
 
-		const nameNode = node.children.find(
-			(c): c is TxmlNode => typeof c !== "string" && nodeLocalName(c, "name"),
-		);
-		const popup = nameNode ? textContent(nameNode) || "Waypoint" : "Waypoint";
+		const popup = asText(waypoint.name) || "Waypoint";
 		waypoints.push({ lat, lon, popup, color: markerColor });
 	}
 

@@ -30,12 +30,11 @@ If you are developing locally, place or symlink this folder into your SilverBull
 
 ## Usage
 
-The widget body accepts a JSON object.
+The widget body must be a JSON object.
 
 Supported fields:
 
 - `source`: a string path, a source object, or an array mixing both
-- `url`: backward-compatible alias for a single string `source`
 - `height`: CSS height for the map container, for example `400px` or `50vh`
 - `center`: `[lat, lon]`
 - `zoom`: numeric zoom level
@@ -166,6 +165,8 @@ Source objects use this shape:
 
 Popup styling can be set globally with `markerStyle` and overridden per marker. Even without explicit popup colors, the widget now applies a readable default popup theme instead of relying on MapLibre's plain white popup styling.
 
+Widgets that are not valid JSON objects render an explicit configuration error instead of trying to interpret legacy `key: value` syntax.
+
 ## View Behavior
 
 - If `center` is present, the map uses `center` and `zoom` or defaults to zoom `13`
@@ -185,8 +186,4 @@ If `mapview.styleUrl` is not set, the widget falls back to the OpenFreeMap Liber
 
 `mapview.maplibreVersion` can also be set globally, and individual widgets may override it. A page can only use one MapLibre GL JS version at a time; if widgets request different versions, later widgets will render an explicit error instead of silently reusing the wrong runtime.
 
-## Compatibility Notes
-
-- Existing simple `url: /path/file.gpx` blocks still work for basic GPX usage
-- `source` objects, `sourceStyle`, `markerStyle`, and per-widget `styleUrl` are JSON-only features
-- The widget loads MapLibre GL JS from the public CDN at runtime
+The widget loads MapLibre GL JS from the public CDN at runtime.

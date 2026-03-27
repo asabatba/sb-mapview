@@ -14,71 +14,30 @@ import type {
 } from "./mapview-types.ts";
 import { asString } from "./mapview-utils.ts";
 
-function parseLegacyConfig(content: string): RawMapConfig {
-	const config: RawMapConfig = {};
-
-	for (const line of content.split(/\r?\n/)) {
-		const trimmed = line.trim();
-		if (!trimmed) {
-			continue;
-		}
-
-		const separatorIndex = trimmed.indexOf(":");
-		if (separatorIndex === -1) {
-			continue;
-		}
-
-		const key = trimmed.slice(0, separatorIndex).trim().toLowerCase();
-		const value = trimmed.slice(separatorIndex + 1).trim();
-		if (!value) {
-			continue;
-		}
-
-		if (
-			key === "source" ||
-			key === "url" ||
-			key === "height" ||
-			key === "styleurl"
-		) {
-			config[key === "styleurl" ? "styleUrl" : key] = value;
-		} else if (key === "zoom") {
-			config.zoom = Number.parseFloat(value);
-		} else if (key === "center") {
-			try {
-				config.center = JSON.parse(value);
-			} catch {
-				config.center = value;
-			}
-		}
-	}
-
-	return config;
-}
-
 export function parseWidgetConfig(content: string): RawMapConfig {
 	const trimmed = content.trim();
 	if (!trimmed) {
 		return {};
 	}
 
-	if (trimmed.startsWith("{")) {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(trimmed);
-		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : "Unknown JSON parse error.";
-			throw new Error(`Map config must be valid JSON: ${message}`);
-		}
-
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			throw new Error("Map config JSON must be an object.");
-		}
-
-		return parsed as RawMapConfig;
+	if (!trimmed.startsWith("{")) {
+		throw new Error("Map config must be a JSON object.");
 	}
 
-	return parseLegacyConfig(content);
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(trimmed);
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : "Unknown JSON parse error.";
+		throw new Error(`Map config must be valid JSON: ${message}`);
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error("Map config JSON must be an object.");
+	}
+
+	return parsed as RawMapConfig;
 }
 
 function asCoordinate(value: unknown): Coordinate | undefined {
@@ -417,7 +376,6 @@ function normalizeSourceEntry(
 
 	return {
 		path,
-		label: asString(rawSource.label),
 		style: mergeSourceStyle(
 			defaultStyle,
 			normalizeSourceStyle(rawSource.style, `Source ${index + 1} style`),
@@ -459,27 +417,6 @@ function assignDefaultSourceLineColors(sources: SourceEntry[]): SourceEntry[] {
 	});
 }
 
-function normalizeUrlSource(
-	urlValue: unknown,
-	defaultStyle: SourceStyle,
-): SourceEntry[] {
-	if (urlValue === undefined) {
-		return [];
-	}
-
-	const url = asString(urlValue);
-	if (!url) {
-		throw new Error("`url` must be a non-empty string path.");
-	}
-
-	return [
-		{
-			path: url,
-			style: defaultStyle,
-		},
-	];
-}
-
 export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 	const sourceStyle = normalizeSourceStyle(
 		rawConfig.sourceStyle,
@@ -489,10 +426,7 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		rawConfig.markerStyle,
 		"`markerStyle`",
 	);
-	const sources =
-		rawConfig.source !== undefined
-			? normalizeSources(rawConfig.source, sourceStyle)
-			: normalizeUrlSource(rawConfig.url, sourceStyle);
+	const sources = normalizeSources(rawConfig.source, sourceStyle);
 	const height = asString(rawConfig.height) || DEFAULT_HEIGHT;
 	const center =
 		rawConfig.center === undefined ? undefined : asCoordinate(rawConfig.center);
