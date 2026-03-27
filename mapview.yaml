@@ -13,16 +13,7 @@ functions:
     path: ./mapview.ts:renderMapViewWidget
     codeWidget: mapview
 
-  renderGPXWidget:
-    path: ./mapview.ts:renderGPXWidget
-    codeWidget: gpxmap
-
   mapViewSlashComplete:
     path: ./mapview.ts:mapViewSlashComplete
-    events:
-      - slash:complete
-
-  gpxSlashComplete:
-    path: ./mapview.ts:gpxSlashComplete
     events:
       - slash:complete

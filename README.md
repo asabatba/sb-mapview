@@ -188,6 +188,5 @@ If `mapview.styleUrl` is not set, the widget falls back to the OpenFreeMap Liber
 ## Compatibility Notes
 
 - Existing simple `url: /path/file.gpx` blocks still work for basic GPX usage
-- Existing legacy ````gpxmap` blocks still render, but new usage should prefer `mapview`
 - `source` objects, `sourceStyle`, `markerStyle`, and per-widget `styleUrl` are JSON-only features
 - The widget loads MapLibre GL JS from the public CDN at runtime

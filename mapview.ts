@@ -141,32 +141,9 @@ export async function renderMapViewWidget(
 	}
 }
 
-export function renderGPXWidget(
-	widgetBody: string,
-): Promise<WidgetRenderResult> {
-	return renderMapViewWidget(widgetBody);
-}
-
 export function mapViewSlashComplete() {
 	return {
 		options: [
-			{
-				label: "mapview",
-				detail: "Insert mapview widget",
-				invoke: "mapview.insertMapView",
-			},
-		],
-	};
-}
-
-export function gpxSlashComplete() {
-	return {
-		options: [
-			{
-				label: "gpxmap",
-				detail: "Insert legacy gpxmap widget",
-				invoke: "mapview.insertMapView",
-			},
 			{
 				label: "mapview",
 				detail: "Insert mapview widget",
