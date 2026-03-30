@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 
-import { normalizeConfig, parseWidgetConfig } from "../mapview-config.ts";
-import { createMapLibreAssetHelpers } from "../mapview-runtime-asset-helpers.ts";
-import { createFeatureHelpers } from "../mapview-runtime-feature-helpers.ts";
-import { createViewHelpers } from "../mapview-runtime-view-helpers.ts";
+import { normalizeConfig, parseWidgetConfig } from "../src/config/config.ts";
+import { createMapLibreAssetHelpers } from "../src/runtime/asset-helpers.ts";
+import { createFeatureHelpers } from "../src/runtime/feature-helpers.ts";
+import { createViewHelpers } from "../src/runtime/view-helpers.ts";
 import {
 	clearSourceCache,
 	loadSourceData,
 	parseGeoJson,
 	parseGpxContent,
 	readSourceFile,
-} from "../mapview-sources.ts";
-import type { FileLayerConfig } from "../mapview-types.ts";
+} from "../src/sources/index.ts";
+import type { FileLayerConfig } from "../src/shared/types.ts";
 
 type TestCase = {
 	name: string;

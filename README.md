@@ -30,6 +30,8 @@ pnpm install
 npm run check
 ```
 
+Source modules live under `src/`. The plugin entrypoint is [`src/index.ts`](./src/index.ts), and `mapview.yaml` points SilverBullet's plug compiler at that file.
+
 Build the distributable plug:
 
 ```shell
@@ -37,6 +39,17 @@ npm run build
 ```
 
 The build generates `mapview.plug.js`, which is the file referenced by `PLUG.md`.
+
+Current repo layout:
+
+- `src/index.ts`: SilverBullet entrypoint
+- `src/config/`: widget parsing and defaults
+- `src/runtime/`: generated browser runtime helpers
+- `src/sources/`: GPX and GeoJSON loading/parsing
+- `src/shared/`: shared types and utilities
+- `test/`: lightweight runtime and parser tests
+- `mapview.yaml`: plug manifest and function entrypoints
+- `mapview.plug.js`: compiled distributable
 
 ## Install In SilverBullet
 

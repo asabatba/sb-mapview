@@ -2,7 +2,7 @@ import {
 	DEFAULT_FIT_PADDING,
 	DEFAULT_HEIGHT,
 	DEFAULT_SOURCE_LINE_COLORS,
-} from "./mapview-constants.ts";
+} from "./constants.ts";
 import type {
 	Coordinate,
 	FileLayerConfig,
@@ -13,8 +13,8 @@ import type {
 	MarkerStyle,
 	RawMapConfig,
 	SourceStyle,
-} from "./mapview-types.ts";
-import { asString } from "./mapview-utils.ts";
+} from "../shared/types.ts";
+import { asString } from "../shared/utils.ts";
 
 export function parseWidgetConfig(content: string): RawMapConfig {
 	const trimmed = content.trim();

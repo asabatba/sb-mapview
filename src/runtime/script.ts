@@ -1,4 +1,4 @@
-import type { RenderPayload } from "./mapview-types.ts";
+import type { RenderPayload } from "../shared/types.ts";
 
 type RuntimeDefaults = {
 	sourceStyle: {

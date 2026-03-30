@@ -4,34 +4,34 @@ imports:
   - https://get.silverbullet.md/global.plug.json
 functions:
   insertMapView:
-    path: ./mapview.ts:insertMapView
+    path: ./src/index.ts:insertMapView
     command:
       name: "MapView: Insert Widget"
       requireMode: rw
 
   insertMapViewGpx:
-    path: ./mapview.ts:insertMapViewGpx
+    path: ./src/index.ts:insertMapViewGpx
     command:
       name: "MapView: Insert GPX Widget"
       requireMode: rw
 
   insertMapViewGeoJson:
-    path: ./mapview.ts:insertMapViewGeoJson
+    path: ./src/index.ts:insertMapViewGeoJson
     command:
       name: "MapView: Insert GeoJSON Widget"
       requireMode: rw
 
   insertMapViewMarkers:
-    path: ./mapview.ts:insertMapViewMarkers
+    path: ./src/index.ts:insertMapViewMarkers
     command:
       name: "MapView: Insert Marker Widget"
       requireMode: rw
 
   renderMapViewWidget:
-    path: ./mapview.ts:renderMapViewWidget
+    path: ./src/index.ts:renderMapViewWidget
     codeWidget: mapview
 
   mapViewSlashComplete:
-    path: ./mapview.ts:mapViewSlashComplete
+    path: ./src/index.ts:mapViewSlashComplete
     events:
       - slash:complete

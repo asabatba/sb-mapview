@@ -2,22 +2,17 @@ import {
 	editor,
 	config as globalConfig,
 } from "@silverbulletmd/silverbullet/syscalls";
-import { normalizeConfig, parseWidgetConfig } from "./mapview-config.ts";
-import { DEFAULT_STYLE_URL, MAPLIBRE_VERSION } from "./mapview-constants.ts";
-import { createMapScript } from "./mapview-runtime.ts";
-import { loadSourceData } from "./mapview-sources.ts";
+import { normalizeConfig, parseWidgetConfig } from "./config/config.ts";
+import { DEFAULT_STYLE_URL, MAPLIBRE_VERSION } from "./config/constants.ts";
+import { createMapScript } from "./runtime/index.ts";
+import { loadSourceData } from "./sources/index.ts";
 import type {
 	LayerConfig,
 	RenderFileLayer,
 	RenderLayer,
 	WidgetRenderResult,
-} from "./mapview-types.ts";
-import {
-	asString,
-	buildError,
-	createMapId,
-	escapeHtml,
-} from "./mapview-utils.ts";
+} from "./shared/types.ts";
+import { asString, buildError, createMapId, escapeHtml } from "./shared/utils.ts";
 
 let configSchemaRegistration: Promise<void> | undefined;
 

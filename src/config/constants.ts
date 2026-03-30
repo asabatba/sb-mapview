@@ -1,4 +1,4 @@
-import type { SourceStyle } from "./mapview-types.ts";
+import type { SourceStyle } from "../shared/types.ts";
 
 export const DEFAULT_HEIGHT = "400px";
 export const DEFAULT_ZOOM = 13;

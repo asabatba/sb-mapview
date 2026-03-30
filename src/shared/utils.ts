@@ -1,4 +1,4 @@
-import type { WidgetRenderResult } from "./mapview-types.ts";
+import type { WidgetRenderResult } from "./types.ts";
 
 let mapInstanceCounter = 0;
 

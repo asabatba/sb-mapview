@@ -6,7 +6,7 @@ import type {
 	GeoJsonData,
 	MapSourceData,
 	MarkerConfig,
-} from "./mapview-types.ts";
+} from "../shared/types.ts";
 
 type XmlObject = Record<string, unknown>;
 type GpxRoot = {

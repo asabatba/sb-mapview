@@ -1,10 +1,10 @@
-import { DEFAULT_SOURCE_STYLE, DEFAULT_ZOOM } from "./mapview-constants.ts";
-import { createMapLibreAssetHelpers } from "./mapview-runtime-asset-helpers.ts";
-import { createFeatureHelpers } from "./mapview-runtime-feature-helpers.ts";
-import { createPopupHelpers } from "./mapview-runtime-popup-helpers.ts";
-import { runMapView } from "./mapview-runtime-script.ts";
-import { createViewHelpers } from "./mapview-runtime-view-helpers.ts";
-import type { RenderPayload } from "./mapview-types.ts";
+import { DEFAULT_SOURCE_STYLE, DEFAULT_ZOOM } from "../config/constants.ts";
+import { createMapLibreAssetHelpers } from "./asset-helpers.ts";
+import { createFeatureHelpers } from "./feature-helpers.ts";
+import { createPopupHelpers } from "./popup-helpers.ts";
+import { runMapView } from "./script.ts";
+import { createViewHelpers } from "./view-helpers.ts";
+import type { RenderPayload } from "../shared/types.ts";
 
 export function createMapScript(payload: RenderPayload, mapId: string): string {
 	return `;(() => {
