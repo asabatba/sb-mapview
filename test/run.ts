@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 
 import { normalizeConfig, parseWidgetConfig } from "../src/config/config.ts";
-import { createMapLibreAssetHelpers } from "../src/runtime/asset-helpers.ts";
 import { createFeatureHelpers } from "../src/runtime/feature-helpers.ts";
 import { createViewHelpers } from "../src/runtime/view-helpers.ts";
+import type { FileLayerConfig } from "../src/shared/types.ts";
 import {
 	clearSourceCache,
 	loadSourceData,
@@ -11,7 +11,6 @@ import {
 	parseGpxContent,
 	readSourceFile,
 } from "../src/sources/index.ts";
-import type { FileLayerConfig } from "../src/shared/types.ts";
 
 type TestCase = {
 	name: string;
@@ -79,7 +78,6 @@ const tests: TestCase[] = [
 			const config = normalizeConfig(
 				parseWidgetConfig(`{
 					"sourceCacheTtlMs": 2500,
-					"maplibreAssetBaseUrl": "https://cdn.example.com/maplibre",
 					"layers": [
 						{
 							"id": "cities",
@@ -100,10 +98,6 @@ const tests: TestCase[] = [
 			);
 
 			assert.equal(config.layers.length, 2);
-			assert.equal(
-				config.maplibreAssetBaseUrl,
-				"https://cdn.example.com/maplibre",
-			);
 			assert.equal(config.sourceCacheTtlMs, 2500);
 
 			const fileLayer = config.layers[0];
@@ -350,30 +344,6 @@ const tests: TestCase[] = [
 				[2.1, 41.1],
 				[2.2, 41.2],
 			]);
-		},
-	},
-	{
-		name: "asset helpers build self-hosted URLs and reject incompatible runtime reuse",
-		run: () => {
-			const helpers = createMapLibreAssetHelpers();
-
-			assert.deepEqual(
-				helpers.buildAssetUrls("5.21.1", "https://cdn.example.com/maplibre/"),
-				{
-					cssHref: "https://cdn.example.com/maplibre/maplibre-gl.css",
-					scriptSrc: "https://cdn.example.com/maplibre/maplibre-gl.js",
-					assetConfigKey: "5.21.1::https://cdn.example.com/maplibre",
-				},
-			);
-
-			assert.throws(
-				() =>
-					helpers.assertCompatibleLoadedRuntime(
-						"5.21.1::unpkg",
-						"5.21.1::https://cdn.example.com/maplibre",
-					),
-				/only one maplibre runtime configuration per page/i,
-			);
 		},
 	},
 ];

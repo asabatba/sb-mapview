@@ -1,4 +1,9 @@
+import { syscall } from "@silverbulletmd/silverbullet/syscall";
 import type { RenderPayload } from "../shared/types.ts";
+import { editor, events, mq } from "@silverbulletmd/silverbullet/syscalls";
+import { MapLibreMap } from "maplibre-gl";
+import { normalizeConfig, parseWidgetConfig } from "../config/config";
+import { buildRenderLayers } from "..";
 
 type RuntimeDefaults = {
 	sourceStyle: {
@@ -29,12 +34,6 @@ type RuntimeFactories = {
 			popupProperty?: string,
 		) => string | null;
 	};
-	createMapLibreAssetHelpers: () => {
-		loadMapLibre: (
-			maplibreVersion: string,
-			assetBaseUrl?: string,
-		) => Promise<unknown>;
-	};
 	createPopupHelpers: () => {
 		buildPopupClassName: (
 			marker: Record<string, unknown> | null,
@@ -57,9 +56,9 @@ type RuntimeFactories = {
 			fitPoints: [number, number][],
 			defaultZoom: number,
 		) =>
-			| { kind: "noop" }
-			| { kind: "jumpTo"; center: [number, number]; zoom: number }
-			| { kind: "fitBounds"; padding: number };
+			| { kind: "noop"; }
+			| { kind: "jumpTo"; center: [number, number]; zoom: number; }
+			| { kind: "fitBounds"; padding: number; };
 		resolveInitialView: (config: {
 			center?: [number, number];
 			zoom?: number;
@@ -97,11 +96,12 @@ type MapLibreMapInstance = {
 	) => void;
 	addLayer: (layer: Record<string, unknown>) => void;
 	addSource: (id: string, source: Record<string, unknown>) => void;
+	easeTo: (options: Record<string, unknown>) => void;
 	fitBounds: (
 		bounds: MapLibreBoundsInstance,
 		options: Record<string, unknown>,
 	) => void;
-	getCanvas: () => { style: { cursor: string } };
+	getCanvas: () => { style: { cursor: string; }; };
 	hasImage?: (id: string) => boolean;
 	jumpTo: (options: Record<string, unknown>) => void;
 	off: (eventName: string, handler: (event: unknown) => void) => void;
@@ -115,6 +115,8 @@ type MapLibreMapInstance = {
 	};
 	once: (eventName: string, handler: () => void) => void;
 	remove: () => void;
+	removeLayer: (id: string) => void;
+	removeSource: (id: string) => void;
 };
 
 type MapLibreApi = {
@@ -122,7 +124,7 @@ type MapLibreApi = {
 		sw: [number, number],
 		ne: [number, number],
 	) => MapLibreBoundsInstance;
-	Map: new (options: Record<string, unknown>) => MapLibreMapInstance;
+	Map: new (options: Record<string, unknown>) => MapLibreMap;
 	Marker: new (options: Record<string, unknown>) => MapLibreMarkerInstance;
 	Popup: new (options: Record<string, unknown>) => MapLibrePopupInstance;
 };
@@ -131,11 +133,12 @@ export function runMapView(
 	mapId: string,
 	payload: RenderPayload,
 	defaults: RuntimeDefaults,
+	maplibregl: MapLibreApi,
 	runtimeFactories: RuntimeFactories,
+	onMapReady?: (map: MapLibreMapInstance) => void,
 ): void {
 	const mapStoreKey = "__mapviewInstances";
 	const featureHelpers = runtimeFactories.createFeatureHelpers();
-	const mapLibreAssets = runtimeFactories.createMapLibreAssetHelpers();
 	const popupHelpers = runtimeFactories.createPopupHelpers();
 	const viewHelpers = runtimeFactories.createViewHelpers();
 
@@ -187,8 +190,8 @@ export function runMapView(
 					: defaults.sourceStyle.lineOpacity,
 			lineDasharray:
 				style &&
-				Array.isArray(style.lineDasharray) &&
-				style.lineDasharray.every((item) => typeof item === "number")
+					Array.isArray(style.lineDasharray) &&
+					style.lineDasharray.every((item) => typeof item === "number")
 					? (style.lineDasharray as number[])
 					: defaults.sourceStyle.lineDasharray,
 			fillColor:
@@ -238,12 +241,11 @@ export function runMapView(
 		map: MapLibreMapInstance,
 		color: string,
 	): string | null {
-		const imageId = `mapview-gpx-chevron-${
-			color
-				.toLowerCase()
-				.replace(/[^a-z0-9_-]+/g, "-")
-				.replace(/^-+|-+$/g, "") || "default"
-		}`;
+		const imageId = `mapview-gpx-chevron-${color
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]+/g, "-")
+			.replace(/^-+|-+$/g, "") || "default"
+			}`;
 		if (typeof map.hasImage === "function" && map.hasImage(imageId)) {
 			return imageId;
 		}
@@ -286,6 +288,7 @@ export function runMapView(
 		sourceId: string,
 		layerPrefix: string,
 		style: Record<string, unknown> | undefined,
+		onLayerAdded?: (id: string) => void,
 	): void {
 		const sourceStyle = resolvedSourceStyle(style);
 		const imageId = ensureGpxChevronImage(map, sourceStyle.lineColor);
@@ -294,8 +297,9 @@ export function runMapView(
 		}
 
 		try {
+			const directionLayerId = `${layerPrefix}-direction`;
 			map.addLayer({
-				id: `${layerPrefix}-direction`,
+				id: directionLayerId,
 				type: "symbol",
 				source: sourceId,
 				filter: ["==", ["geometry-type"], "LineString"],
@@ -311,6 +315,7 @@ export function runMapView(
 					"icon-pitch-alignment": "map",
 				},
 			});
+			onLayerAdded?.(directionLayerId);
 		} catch (error) {
 			console.warn(
 				"mapview: unable to add GPX direction chevrons; rendering track without direction layer.",
@@ -324,7 +329,7 @@ export function runMapView(
 		map: MapLibreMapInstance,
 		markers: Record<string, unknown>[],
 		fitPoints: [number, number][],
-		markerStore: { remove: () => void }[],
+		markerStore: { remove: () => void; }[],
 		markerGroupKey: string,
 	): void {
 		markers.forEach((marker, index) => {
@@ -362,7 +367,7 @@ export function runMapView(
 		popupProperty?: string,
 	): void {
 		map.on("click", layerId, (event) => {
-			const typedEvent = event as { features?: unknown[]; lngLat?: unknown };
+			const typedEvent = event as { features?: unknown[]; lngLat?: unknown; };
 			const feature =
 				Array.isArray(typedEvent.features) && typedEvent.features.length > 0
 					? typedEvent.features[0]
@@ -407,6 +412,8 @@ export function runMapView(
 			showDirection?: boolean;
 			showLabels?: boolean;
 		},
+		onLayerAdded?: (id: string) => void,
+		onSourceAdded?: (id: string) => void,
 	): void {
 		const coordinates = featureHelpers.collectGeoJsonLngLats(data);
 		if (coordinates.length === 0) {
@@ -418,6 +425,7 @@ export function runMapView(
 			type: "geojson",
 			data,
 		});
+		onSourceAdded?.(sourceId);
 
 		const fillLayerId = `${layerPrefix}-fill`;
 		const lineLayerId = `${layerPrefix}-line`;
@@ -433,6 +441,7 @@ export function runMapView(
 				"fill-opacity": sourceStyle.fillOpacity,
 			},
 		});
+		onLayerAdded?.(fillLayerId);
 
 		const linePaint: Record<string, unknown> = {
 			"line-color": sourceStyle.lineColor,
@@ -449,9 +458,10 @@ export function runMapView(
 			source: sourceId,
 			paint: linePaint,
 		});
+		onLayerAdded?.(lineLayerId);
 
 		if (layerConfig.showDirection) {
-			tryAddGpxDirectionLayer(map, sourceId, layerPrefix, style);
+			tryAddGpxDirectionLayer(map, sourceId, layerPrefix, style, onLayerAdded);
 		}
 
 		map.addLayer({
@@ -466,10 +476,12 @@ export function runMapView(
 				"circle-stroke-width": sourceStyle.pointStrokeWidth,
 			},
 		});
+		onLayerAdded?.(pointLayerId);
 
 		if (layerConfig.showLabels || layerConfig.labelProperty) {
+			const labelsLayerId = `${layerPrefix}-labels`;
 			map.addLayer({
-				id: `${layerPrefix}-labels`,
+				id: labelsLayerId,
 				type: "symbol",
 				source: sourceId,
 				filter: ["==", ["geometry-type"], "Point"],
@@ -487,6 +499,7 @@ export function runMapView(
 					"text-halo-width": sourceStyle.labelHaloWidth,
 				},
 			});
+			onLayerAdded?.(labelsLayerId);
 		}
 
 		registerPopupHandler(
@@ -521,9 +534,9 @@ export function runMapView(
 		const instances =
 			((globalThis as unknown as Record<string, unknown>)[mapStoreKey] as
 				| Record<
-						string,
-						{ map?: { remove: () => void }; markers?: { remove: () => void }[] }
-				  >
+					string,
+					{ map?: { remove: () => void; }; markers?: { remove: () => void; }[]; }
+				>
 				| undefined) ?? {};
 		const existing = instances[mapId];
 		if (!existing) {
@@ -554,7 +567,70 @@ export function runMapView(
 			zoom: initialView.initialZoom,
 		});
 
-		const markerStore: { remove: () => void }[] = [];
+		// syscall("editor.getCurrentPath").then(console.log);
+
+		type MapViewEventDetail =
+			(| {
+				type: "focus",
+				center: [number, number];
+				zoom: number;
+				duration?: number;
+			}
+				| {
+					type: "updateConfig",
+					config: string,
+				}) & {
+					mapId: string;
+				};
+
+		const mapviewEventHandler = (event: CustomEvent<MapViewEventDetail>) => {
+
+			// const typedEvent = event;
+			if ((event.detail.mapId !== mapId) && !(!event.detail.mapId && mapId === "mapview-sidebar")) {
+				return;
+			}
+			console.log("Received mapview event with data:", event);
+			editor.flashNotification("Map view event received!");
+
+			switch (event.detail.type) {
+
+				case "focus":
+					(map).easeTo({
+						center: event.detail.center,
+						zoom: event.detail.zoom,
+						duration: event.detail.duration ?? 1000
+					});
+					break;
+				case "updateConfig":
+					try {
+						buildRenderLayers(event.detail.config).then(layers => {
+
+							updateMapViewLayers(mapId, layers);
+						}).catch((error) => {
+							const message =
+								error instanceof Error ? error.message : "Unknown error building render layers.";
+							renderError(`Map Error: ${message}`);
+						});
+					} catch (error) {
+						const message =
+							error instanceof Error ? error.message : "Unknown error updating map config.";
+						renderError(`Map Error: ${message}`);
+					}
+					break;
+				default:
+					break;
+			}
+		};
+
+		window.parent.document.addEventListener("mapview", mapviewEventHandler);
+		editor.getCursor().then(cursor => {
+
+			editor.flashNotification(`cursor info: ${cursor}`);
+		});
+
+		const markerStore: { remove: () => void; }[] = [];
+		const trackedLayerIds: string[] = [];
+		const trackedSourceIds: string[] = [];
 		const mapInstances =
 			((globalThis as Record<string, unknown>)[mapStoreKey] as
 				| Record<string, unknown>
@@ -562,13 +638,101 @@ export function runMapView(
 		mapInstances[mapId] = { map, markers: markerStore };
 		(globalThis as Record<string, unknown>)[mapStoreKey] = mapInstances;
 
+		function doAddLayers(
+			layers: RenderPayload["layers"],
+			fitPoints: [number, number][],
+		): void {
+			const trackLayer = (id: string) => trackedLayerIds.push(id);
+			const trackSource = (id: string) => trackedSourceIds.push(id);
+
+			layers.forEach((layer, index) => {
+				if (layer.kind === "markers") {
+					addMarkers(
+						maplibregl,
+						map,
+						layer.markers as Record<string, unknown>[],
+						fitPoints,
+						markerStore,
+						layer.id || `${mapId}-markers-${index}`,
+					);
+					return;
+				}
+
+				if (layer.sourceData.kind === "gpx") {
+					if (layer.sourceData.trackGeoJson) {
+						addGeoJsonLayers(
+							maplibregl,
+							map,
+							`${mapId}-gpx-source-${index}`,
+							layer.sourceData.trackGeoJson,
+							layer.id || `${mapId}-gpx-${index}`,
+							fitPoints,
+							layer.sourceData.style,
+							{
+								popupProperty: layer.popupProperty,
+								showDirection: layer.showDirection,
+								showLabels: layer.showLabels,
+								labelProperty: layer.labelProperty,
+							},
+							trackLayer,
+							trackSource,
+						);
+					}
+
+					addMarkers(
+						maplibregl,
+						map,
+						layer.sourceData.markers as Record<string, unknown>[],
+						fitPoints,
+						markerStore,
+						layer.id || `${mapId}-gpx-markers-${index}`,
+					);
+					return;
+				}
+
+				addGeoJsonLayers(
+					maplibregl,
+					map,
+					`${mapId}-geojson-source-${index}`,
+					layer.sourceData.data,
+					layer.id || `${mapId}-geojson-${index}`,
+					fitPoints,
+					layer.sourceData.style,
+					{
+						popupProperty: layer.popupProperty,
+						showLabels: layer.showLabels,
+						labelProperty: layer.labelProperty,
+					},
+					trackLayer,
+					trackSource,
+				);
+			});
+		}
+
+		function renderLayers(newLayers: RenderPayload["layers"]): void {
+			[...trackedLayerIds].reverse().forEach((id) => {
+				try { map.removeLayer(id); } catch { /* layer may not exist */ }
+			});
+			trackedLayerIds.length = 0;
+			trackedSourceIds.forEach((id) => {
+				try { map.removeSource(id); } catch { /* source may not exist */ }
+			});
+			trackedSourceIds.length = 0;
+			markerStore.forEach((m) => m.remove());
+			markerStore.length = 0;
+
+			doAddLayers(newLayers, []);
+		}
+
+		(mapInstances[mapId] as Record<string, unknown>).renderLayers = renderLayers;
+
 		let initialized = false;
 		const initialErrorHandler = (event: unknown) => {
 			if (initialized) {
 				return;
 			}
 
-			const typedEvent = event as { error?: { message?: string } };
+			const typedEvent = event as { error?: { message?: string; }; };
 			const message = typedEvent.error?.message
 				? typedEvent.error.message
 				: "Unable to load MapLibre style.";
@@ -577,119 +741,62 @@ export function runMapView(
 		};
 
 		map.on("error", initialErrorHandler);
-
+		(map as MapLibreMap).on("remove", () => {
+			window.parent.document.removeEventListener("mapview", mapviewEventHandler);
+		});
 		map.once("load", () => {
 			initialized = true;
 			map.off("error", initialErrorHandler);
 
 			try {
 				const fitPoints: [number, number][] = [];
-
-				payload.layers.forEach((layer, index) => {
-					if (layer.kind === "markers") {
-						addMarkers(
-							maplibregl,
-							map,
-							layer.markers as Record<string, unknown>[],
-							fitPoints,
-							markerStore,
-							layer.id || `${mapId}-markers-${index}`,
-						);
-						return;
-					}
-
-					if (layer.sourceData.kind === "gpx") {
-						if (layer.sourceData.trackGeoJson) {
-							addGeoJsonLayers(
-								maplibregl,
-								map,
-								`${mapId}-gpx-source-${index}`,
-								layer.sourceData.trackGeoJson,
-								layer.id || `${mapId}-gpx-${index}`,
-								fitPoints,
-								layer.sourceData.style,
-								{
-									popupProperty: layer.popupProperty,
-									showDirection: layer.showDirection,
-									showLabels: layer.showLabels,
-									labelProperty: layer.labelProperty,
-								},
-							);
-						}
-
-						addMarkers(
-							maplibregl,
-							map,
-							layer.sourceData.markers as Record<string, unknown>[],
-							fitPoints,
-							markerStore,
-							layer.id || `${mapId}-gpx-markers-${index}`,
-						);
-						return;
-					}
-
-					addGeoJsonLayers(
-						maplibregl,
-						map,
-						`${mapId}-geojson-source-${index}`,
-						layer.sourceData.data,
-						layer.id || `${mapId}-geojson-${index}`,
-						fitPoints,
-						layer.sourceData.style,
-						{
-							popupProperty: layer.popupProperty,
-							showLabels: layer.showLabels,
-							labelProperty: layer.labelProperty,
-						},
-					);
-				});
+				doAddLayers(payload.layers, fitPoints);
 
 				const fitAction = viewHelpers.resolveFitAction(
 					payload.config,
 					fitPoints,
 					defaults.zoom,
 				);
-				if (fitAction.kind === "noop") {
-					return;
-				}
-
 				if (fitAction.kind === "jumpTo") {
 					map.jumpTo({
 						center: fitAction.center,
 						zoom: fitAction.zoom,
 					});
-					return;
+				} else if (fitAction.kind === "fitBounds") {
+					const firstPoint = fitPoints[0];
+					if (firstPoint) {
+						const bounds = fitPoints.reduce(
+							(accumulator, point) => accumulator.extend(point),
+							new maplibregl.LngLatBounds(firstPoint, firstPoint),
+						);
+						map.fitBounds(bounds, {
+							padding: fitAction.padding,
+							duration: 0,
+						});
+					}
 				}
-
-				const firstPoint = fitPoints[0];
-				if (!firstPoint) {
-					return;
-				}
-				const bounds = fitPoints.reduce(
-					(accumulator, point) => accumulator.extend(point),
-					new maplibregl.LngLatBounds(firstPoint, firstPoint),
-				);
-				map.fitBounds(bounds, {
-					padding: fitAction.padding,
-					duration: 0,
-				});
 			} catch (error) {
 				const message =
 					error instanceof Error ? error.message : "Unable to render map data.";
 				renderError(`Map Error: ${message}`);
 				cleanupExistingInstance();
+				return;
 			}
+
+			onMapReady?.(map);
 		});
 	}
 
-	mapLibreAssets
-		.loadMapLibre(payload.maplibreVersion, payload.maplibreAssetBaseUrl)
-		.then((maplibregl) => {
-			initMap(maplibregl as MapLibreApi);
-		})
-		.catch((error) => {
-			const message =
-				error instanceof Error ? error.message : "Unable to initialize map.";
-			renderError(`Map Error: ${message}`);
-		});
+	initMap(maplibregl);
+}
+
+export function updateMapViewLayers(
+	mapId: string,
+	newLayers: RenderPayload["layers"],
+): void {
+	const mapStoreKey = "__mapviewInstances";
+	const instances = (globalThis as Record<string, unknown>)[mapStoreKey] as
+		| Record<string, { renderLayers?: (layers: RenderPayload["layers"]) => void; }>
+		| undefined;
+	instances?.[mapId]?.renderLayers?.(newLayers);
 }

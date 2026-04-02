@@ -35,3 +35,35 @@ functions:
     path: ./src/index.ts:mapViewSlashComplete
     events:
       - slash:complete
+
+  showMapViewSidebar:
+    path: "./src/index.ts:enableMapViewSidebar"
+
+  hideMapViewSidebar:
+    path: "./src/index.ts:disableMapViewSidebar"
+
+  toggle:
+    path: "./src/index.ts:toggleMapViewSidebar"
+    command:
+      name: "Map Sidebar: Toggle"
+      # key: Ctrl-alt-o
+      # mac: Cmd-alt-o
+
+  showMapViewSidebarOnInit:
+    path: "./src/index.ts:initMapViewSidebar"
+    events:
+      - editor:init
+      - editor:updated
+
+  # list:
+  #   path: "./src/runtime/api.ts:listViews"
+  #   syscall: "mapview.list"
+  # flyTo:
+  #   path: "./src/runtime/api.ts:flyTo"
+  #   syscall: "mapview.flyTo"
+  # setMarkers:
+  #   path: "./map_api.ts:setMarkers"
+  #   syscall: "maplibre.setMarkers"
+  # selectMarker:
+  #   path: "./map_api.ts:selectMarker"
+  #   syscall: "maplibre.selectMarker"

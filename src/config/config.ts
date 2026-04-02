@@ -690,22 +690,6 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 
 	const autoFit = parseBooleanField(rawConfig.autoFit, "autoFit", "`autoFit`");
 
-	const maplibreVersion =
-		rawConfig.maplibreVersion === undefined
-			? undefined
-			: asString(rawConfig.maplibreVersion);
-	if (rawConfig.maplibreVersion !== undefined && !maplibreVersion) {
-		throw new Error("`maplibreVersion` must be a non-empty string.");
-	}
-
-	const maplibreAssetBaseUrl =
-		rawConfig.maplibreAssetBaseUrl === undefined
-			? undefined
-			: asString(rawConfig.maplibreAssetBaseUrl);
-	if (rawConfig.maplibreAssetBaseUrl !== undefined && !maplibreAssetBaseUrl) {
-		throw new Error("`maplibreAssetBaseUrl` must be a non-empty string.");
-	}
-
 	const sourceCacheTtlMs =
 		parseNonNegativeNumberField(
 			rawConfig.sourceCacheTtlMs,
@@ -750,8 +734,6 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		markerStyle,
 		fitPadding,
 		autoFit: autoFit ?? true,
-		maplibreVersion,
-		maplibreAssetBaseUrl,
 		sourceCacheTtlMs,
 	};
 }

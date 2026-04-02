@@ -26,8 +26,6 @@ export type RawMapConfig = {
 	markerStyle?: unknown;
 	fitPadding?: unknown;
 	autoFit?: unknown;
-	maplibreVersion?: unknown;
-	maplibreAssetBaseUrl?: unknown;
 	sourceCacheTtlMs?: unknown;
 };
 
@@ -98,8 +96,6 @@ export type MapConfig = {
 	markerStyle: MarkerStyle;
 	fitPadding: number;
 	autoFit: boolean;
-	maplibreVersion?: string;
-	maplibreAssetBaseUrl?: string;
 	sourceCacheTtlMs: number;
 };
 
@@ -132,8 +128,6 @@ export type RenderPayload = {
 	config: MapConfig;
 	layers: RenderLayer[];
 	styleUrl: string;
-	maplibreVersion: string;
-	maplibreAssetBaseUrl?: string;
 };
 
 export type WidgetRenderResult = {

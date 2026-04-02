@@ -31,4 +31,3 @@ export const DEFAULT_SOURCE_STYLE: Required<Omit<SourceStyle, "markerColor">> =
 		labelHaloWidth: 1.5,
 		labelSize: 12,
 	};
-export const MAPLIBRE_VERSION = "5.21.1";
