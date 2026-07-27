@@ -1,6 +1,7 @@
 import type { MarkerOptions, PopupOptions } from "maplibre-gl";
 
 export type Coordinate = [number, number];
+export type LngLat = [number, number];
 
 export type SupportedMarkerOptions = Pick<MarkerOptions, "color" | "scale">;
 export type SupportedPopupOptions = Pick<
@@ -15,12 +16,10 @@ export type PopupStyle = {
 };
 
 export type RawMapConfig = {
-	source?: unknown;
 	layers?: unknown;
 	height?: unknown;
 	center?: unknown;
 	zoom?: unknown;
-	markers?: unknown;
 	styleUrl?: unknown;
 	sourceStyle?: unknown;
 	markerStyle?: unknown;
@@ -134,3 +133,19 @@ export type WidgetRenderResult = {
 	html: string;
 	script: string;
 };
+
+export type MapViewReplaceLayersAction = {
+	kind: "replaceLayers";
+	mapId: string;
+	layers: RenderLayer[];
+};
+
+export type MapViewFocusAction = {
+	kind: "focus";
+	mapId: string;
+	center: LngLat;
+	zoom: number;
+	duration?: number;
+};
+
+export type MapViewAction = MapViewReplaceLayersAction | MapViewFocusAction;

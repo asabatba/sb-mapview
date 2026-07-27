@@ -1,9 +1,4 @@
-import { syscall } from "@silverbulletmd/silverbullet/syscall";
-import type { RenderPayload } from "../shared/types.ts";
-import { editor, events, mq } from "@silverbulletmd/silverbullet/syscalls";
-import { MapLibreMap } from "maplibre-gl";
-import { normalizeConfig, parseWidgetConfig } from "../config/config";
-import { buildRenderLayers } from "..";
+import type { MapViewAction, RenderPayload } from "../shared/types.ts";
 
 type RuntimeDefaults = {
 	sourceStyle: {
@@ -56,9 +51,9 @@ type RuntimeFactories = {
 			fitPoints: [number, number][],
 			defaultZoom: number,
 		) =>
-			| { kind: "noop"; }
-			| { kind: "jumpTo"; center: [number, number]; zoom: number; }
-			| { kind: "fitBounds"; padding: number; };
+			| { kind: "noop" }
+			| { kind: "jumpTo"; center: [number, number]; zoom: number }
+			| { kind: "fitBounds"; padding: number };
 		resolveInitialView: (config: {
 			center?: [number, number];
 			zoom?: number;
@@ -91,17 +86,14 @@ type MapLibreBoundsInstance = {
 type MapLibreMapInstance = {
 	addImage: (
 		id: string,
-		image: HTMLCanvasElement | ImageData,
+		image: unknown,
 		options?: Record<string, unknown>,
 	) => void;
 	addLayer: (layer: Record<string, unknown>) => void;
 	addSource: (id: string, source: Record<string, unknown>) => void;
 	easeTo: (options: Record<string, unknown>) => void;
-	fitBounds: (
-		bounds: MapLibreBoundsInstance,
-		options: Record<string, unknown>,
-	) => void;
-	getCanvas: () => { style: { cursor: string; }; };
+	fitBounds: (bounds: unknown, options: Record<string, unknown>) => void;
+	getCanvas: () => { style: { cursor: string } };
 	hasImage?: (id: string) => boolean;
 	jumpTo: (options: Record<string, unknown>) => void;
 	off: (eventName: string, handler: (event: unknown) => void) => void;
@@ -124,10 +116,29 @@ type MapLibreApi = {
 		sw: [number, number],
 		ne: [number, number],
 	) => MapLibreBoundsInstance;
-	Map: new (options: Record<string, unknown>) => MapLibreMap;
+	Map: new (options: Record<string, unknown>) => MapLibreMapInstance;
 	Marker: new (options: Record<string, unknown>) => MapLibreMarkerInstance;
 	Popup: new (options: Record<string, unknown>) => MapLibrePopupInstance;
 };
+
+type MapInstanceStoreEntry = {
+	map?: { remove: () => void };
+	markers?: { remove: () => void }[];
+	renderLayers?: (layers: RenderPayload["layers"]) => void;
+	focus?: (action: Extract<MapViewAction, { kind: "focus" }>) => void;
+};
+
+function getMapInstances(): Record<string, MapInstanceStoreEntry> {
+	const mapStoreKey = "__mapviewInstances";
+	if (!(mapStoreKey in globalThis)) {
+		(globalThis as Record<string, unknown>)[mapStoreKey] = {};
+	}
+
+	return (globalThis as Record<string, unknown>)[mapStoreKey] as Record<
+		string,
+		MapInstanceStoreEntry
+	>;
+}
 
 export function runMapView(
 	mapId: string,
@@ -135,9 +146,7 @@ export function runMapView(
 	defaults: RuntimeDefaults,
 	maplibregl: MapLibreApi,
 	runtimeFactories: RuntimeFactories,
-	onMapReady?: (map: MapLibreMapInstance) => void,
 ): void {
-	const mapStoreKey = "__mapviewInstances";
 	const featureHelpers = runtimeFactories.createFeatureHelpers();
 	const popupHelpers = runtimeFactories.createPopupHelpers();
 	const viewHelpers = runtimeFactories.createViewHelpers();
@@ -190,8 +199,8 @@ export function runMapView(
 					: defaults.sourceStyle.lineOpacity,
 			lineDasharray:
 				style &&
-					Array.isArray(style.lineDasharray) &&
-					style.lineDasharray.every((item) => typeof item === "number")
+				Array.isArray(style.lineDasharray) &&
+				style.lineDasharray.every((item) => typeof item === "number")
 					? (style.lineDasharray as number[])
 					: defaults.sourceStyle.lineDasharray,
 			fillColor:
@@ -241,11 +250,12 @@ export function runMapView(
 		map: MapLibreMapInstance,
 		color: string,
 	): string | null {
-		const imageId = `mapview-gpx-chevron-${color
-			.toLowerCase()
-			.replace(/[^a-z0-9_-]+/g, "-")
-			.replace(/^-+|-+$/g, "") || "default"
-			}`;
+		const imageId = `mapview-gpx-chevron-${
+			color
+				.toLowerCase()
+				.replace(/[^a-z0-9_-]+/g, "-")
+				.replace(/^-+|-+$/g, "") || "default"
+		}`;
 		if (typeof map.hasImage === "function" && map.hasImage(imageId)) {
 			return imageId;
 		}
@@ -329,7 +339,7 @@ export function runMapView(
 		map: MapLibreMapInstance,
 		markers: Record<string, unknown>[],
 		fitPoints: [number, number][],
-		markerStore: { remove: () => void; }[],
+		markerStore: { remove: () => void }[],
 		markerGroupKey: string,
 	): void {
 		markers.forEach((marker, index) => {
@@ -367,7 +377,7 @@ export function runMapView(
 		popupProperty?: string,
 	): void {
 		map.on("click", layerId, (event) => {
-			const typedEvent = event as { features?: unknown[]; lngLat?: unknown; };
+			const typedEvent = event as { features?: unknown[]; lngLat?: unknown };
 			const feature =
 				Array.isArray(typedEvent.features) && typedEvent.features.length > 0
 					? typedEvent.features[0]
@@ -527,17 +537,7 @@ export function runMapView(
 	}
 
 	function cleanupExistingInstance(): void {
-		if (!(mapStoreKey in globalThis)) {
-			(globalThis as Record<string, unknown>)[mapStoreKey] = {};
-		}
-
-		const instances =
-			((globalThis as unknown as Record<string, unknown>)[mapStoreKey] as
-				| Record<
-					string,
-					{ map?: { remove: () => void; }; markers?: { remove: () => void; }[]; }
-				>
-				| undefined) ?? {};
+		const instances = getMapInstances();
 		const existing = instances[mapId];
 		if (!existing) {
 			return;
@@ -567,76 +567,11 @@ export function runMapView(
 			zoom: initialView.initialZoom,
 		});
 
-		// syscall("editor.getCurrentPath").then(console.log);
-
-		type MapViewEventDetail =
-			(| {
-				type: "focus",
-				center: [number, number];
-				zoom: number;
-				duration?: number;
-			}
-				| {
-					type: "updateConfig",
-					config: string,
-				}) & {
-					mapId: string;
-				};
-
-		const mapviewEventHandler = (event: CustomEvent<MapViewEventDetail>) => {
-
-			// const typedEvent = event;
-			if ((event.detail.mapId !== mapId) && !(!event.detail.mapId && mapId === "mapview-sidebar")) {
-				return;
-			}
-			console.log("Received mapview event with data:", event);
-			editor.flashNotification("Map view event received!");
-
-			switch (event.detail.type) {
-
-				case "focus":
-					(map).easeTo({
-						center: event.detail.center,
-						zoom: event.detail.zoom,
-						duration: event.detail.duration ?? 1000
-					});
-					break;
-				case "updateConfig":
-					try {
-						buildRenderLayers(event.detail.config).then(layers => {
-
-							updateMapViewLayers(mapId, layers);
-						}).catch((error) => {
-							const message =
-								error instanceof Error ? error.message : "Unknown error building render layers.";
-							renderError(`Map Error: ${message}`);
-						});
-					} catch (error) {
-						const message =
-							error instanceof Error ? error.message : "Unknown error updating map config.";
-						renderError(`Map Error: ${message}`);
-					}
-					break;
-				default:
-					break;
-			}
-		};
-
-		window.parent.document.addEventListener("mapview", mapviewEventHandler);
-		editor.getCursor().then(cursor => {
-
-			editor.flashNotification(`cursor info: ${cursor}`);
-		});
-
-		const markerStore: { remove: () => void; }[] = [];
+		const markerStore: { remove: () => void }[] = [];
 		const trackedLayerIds: string[] = [];
 		const trackedSourceIds: string[] = [];
-		const mapInstances =
-			((globalThis as Record<string, unknown>)[mapStoreKey] as
-				| Record<string, unknown>
-				| undefined) ?? {};
+		const mapInstances = getMapInstances();
 		mapInstances[mapId] = { map, markers: markerStore };
-		(globalThis as Record<string, unknown>)[mapStoreKey] = mapInstances;
 
 		function doAddLayers(
 			layers: RenderPayload["layers"],
@@ -711,20 +646,43 @@ export function runMapView(
 
 		function renderLayers(newLayers: RenderPayload["layers"]): void {
 			[...trackedLayerIds].reverse().forEach((id) => {
-				try { map.removeLayer(id); } catch { /* layer may not exist */ }
+				try {
+					map.removeLayer(id);
+				} catch {
+					/* layer may not exist */
+				}
 			});
 			trackedLayerIds.length = 0;
 			trackedSourceIds.forEach((id) => {
-				try { map.removeSource(id); } catch { /* source may not exist */ }
+				try {
+					map.removeSource(id);
+				} catch {
+					/* source may not exist */
+				}
 			});
 			trackedSourceIds.length = 0;
-			markerStore.forEach((m) => m.remove());
+			markerStore.forEach((m) => {
+				m.remove();
+			});
 			markerStore.length = 0;
 
 			doAddLayers(newLayers, []);
 		}
 
-		(mapInstances[mapId] as Record<string, unknown>).renderLayers = renderLayers;
+		function focusMap(action: Extract<MapViewAction, { kind: "focus" }>): void {
+			map.easeTo({
+				center: action.center,
+				zoom: action.zoom,
+				duration: action.duration ?? 1_000,
+			});
+		}
+
+		mapInstances[mapId] = {
+			map,
+			markers: markerStore,
+			renderLayers,
+			focus: focusMap,
+		};
 
 		let initialized = false;
 		const initialErrorHandler = (event: unknown) => {
@@ -732,7 +690,7 @@ export function runMapView(
 				return;
 			}
 
-			const typedEvent = event as { error?: { message?: string; }; };
+			const typedEvent = event as { error?: { message?: string } };
 			const message = typedEvent.error?.message
 				? typedEvent.error.message
 				: "Unable to load MapLibre style.";
@@ -741,8 +699,8 @@ export function runMapView(
 		};
 
 		map.on("error", initialErrorHandler);
-		(map as MapLibreMap).on("remove", () => {
-			window.parent.document.removeEventListener("mapview", mapviewEventHandler);
+		map.on("remove", () => {
+			delete getMapInstances()[mapId];
 		});
 		map.once("load", () => {
 			initialized = true;
@@ -782,21 +740,23 @@ export function runMapView(
 				cleanupExistingInstance();
 				return;
 			}
-
-			onMapReady?.(map);
 		});
 	}
 
 	initMap(maplibregl);
 }
 
-export function updateMapViewLayers(
-	mapId: string,
-	newLayers: RenderPayload["layers"],
-): void {
-	const mapStoreKey = "__mapviewInstances";
-	const instances = (globalThis as Record<string, unknown>)[mapStoreKey] as
-		| Record<string, { renderLayers?: (layers: RenderPayload["layers"]) => void; }>
-		| undefined;
-	instances?.[mapId]?.renderLayers?.(newLayers);
+export function dispatchMapViewAction(action: MapViewAction): boolean {
+	const instance = getMapInstances()[action.mapId];
+	if (!instance) {
+		return false;
+	}
+
+	if (action.kind === "replaceLayers") {
+		instance.renderLayers?.(action.layers);
+		return true;
+	}
+
+	instance.focus?.(action);
+	return true;
 }

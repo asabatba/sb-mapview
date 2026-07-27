@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 
 import { normalizeConfig, parseWidgetConfig } from "../src/config/config.ts";
 import { createFeatureHelpers } from "../src/runtime/feature-helpers.ts";
+import { createMapActionScript } from "../src/runtime/index.ts";
 import { createViewHelpers } from "../src/runtime/view-helpers.ts";
-import type { FileLayerConfig } from "../src/shared/types.ts";
+import type { FileLayerConfig, RenderLayer } from "../src/shared/types.ts";
+import { findActiveMapViewWidget } from "../src/sidebar/controller.ts";
 import {
 	clearSourceCache,
 	loadSourceData,
@@ -48,28 +50,27 @@ const tests: TestCase[] = [
 		},
 	},
 	{
-		name: "config normalization keeps legacy source and markers compatibility",
+		name: "config parser rejects legacy source field with migration guidance",
 		run: () => {
-			const config = normalizeConfig(
-				parseWidgetConfig(`{
-					"sourceStyle": { "lineWidth": 5 },
-					"markerStyle": { "color": "#7c3aed" },
-					"source": [
-						"/tracks/day-1.gpx",
-						{ "path": "/tracks/day-2.gpx", "style": { "lineColor": "#0f766e" } }
-					],
-					"markers": [
-						{ "lat": 41.1, "lon": 2.1, "popup": "A" }
-					]
-				}`),
+			assert.throws(
+				() =>
+					parseWidgetConfig(`{
+						"source": "/tracks/day-1.gpx"
+					}`),
+				/source.*no longer supported/i,
 			);
-
-			assert.equal(config.layers.length, 3);
-			assert.equal(config.layers[0]?.kind, "file");
-			assert.equal(config.layers[1]?.kind, "file");
-			assert.equal(config.layers[2]?.kind, "markers");
-			assert.equal(config.layers[0]?.style.lineWidth, 5);
-			assert.equal(config.layers[2]?.style.color, "#7c3aed");
+		},
+	},
+	{
+		name: "config parser rejects legacy markers field with migration guidance",
+		run: () => {
+			assert.throws(
+				() =>
+					parseWidgetConfig(`{
+						"markers": [{ "lat": 41.1, "lon": 2.1 }]
+					}`),
+				/markers.*no longer supported/i,
+			);
 		},
 	},
 	{
@@ -344,6 +345,66 @@ const tests: TestCase[] = [
 				[2.1, 41.1],
 				[2.2, 41.2],
 			]);
+		},
+	},
+	{
+		name: "sidebar helper finds the active mapview block under the cursor",
+		run: () => {
+			const documentText = [
+				"# Title",
+				"",
+				"```mapview",
+				'{ "layers": [{ "path": "/tracks/day-1.gpx" }] }',
+				"```",
+				"",
+				"```mapview",
+				'{ "layers": [{ "kind": "markers", "markers": [{ "lat": 41.3, "lon": 2.3 }] }] }',
+				"```",
+			].join("\n");
+
+			const secondBlockCursor = documentText.indexOf('"kind": "markers"');
+			assert.equal(
+				findActiveMapViewWidget(documentText, secondBlockCursor)?.includes(
+					'"kind": "markers"',
+				),
+				true,
+			);
+			assert.equal(findActiveMapViewWidget(documentText, 0), undefined);
+		},
+	},
+	{
+		name: "runtime action script accepts prebuilt render layers and focus commands",
+		run: () => {
+			const layers: RenderLayer[] = [
+				{
+					kind: "markers",
+					visible: true,
+					style: {},
+					markers: [{ lat: 41.3874, lon: 2.1686, popup: "Barcelona" }],
+				},
+			];
+
+			const replaceLayersScript = createMapActionScript({
+				kind: "replaceLayers",
+				mapId: "mapview-sidebar",
+				layers,
+			});
+			const focusScript = createMapActionScript({
+				kind: "focus",
+				mapId: "mapview-sidebar",
+				center: [2.1686, 41.3874],
+				zoom: 11,
+				duration: 750,
+			});
+
+			assert.match(replaceLayersScript, /"kind":"replaceLayers"/);
+			assert.match(replaceLayersScript, /"markers"/);
+			assert.doesNotMatch(
+				replaceLayersScript,
+				/parseWidgetConfig|buildRenderLayers/,
+			);
+			assert.match(focusScript, /"kind":"focus"/);
+			assert.match(focusScript, /"duration":750/);
 		},
 	},
 ];

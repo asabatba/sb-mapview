@@ -9,24 +9,6 @@ functions:
       name: "MapView: Insert Widget"
       requireMode: rw
 
-  insertMapViewGpx:
-    path: ./src/index.ts:insertMapViewGpx
-    command:
-      name: "MapView: Insert GPX Widget"
-      requireMode: rw
-
-  insertMapViewGeoJson:
-    path: ./src/index.ts:insertMapViewGeoJson
-    command:
-      name: "MapView: Insert GeoJSON Widget"
-      requireMode: rw
-
-  insertMapViewMarkers:
-    path: ./src/index.ts:insertMapViewMarkers
-    command:
-      name: "MapView: Insert Marker Widget"
-      requireMode: rw
-
   renderMapViewWidget:
     path: ./src/index.ts:renderMapViewWidget
     codeWidget: mapview
@@ -35,12 +17,6 @@ functions:
     path: ./src/index.ts:mapViewSlashComplete
     events:
       - slash:complete
-
-  showMapViewSidebar:
-    path: "./src/index.ts:enableMapViewSidebar"
-
-  hideMapViewSidebar:
-    path: "./src/index.ts:disableMapViewSidebar"
 
   toggle:
     path: "./src/index.ts:toggleMapViewSidebar"
@@ -53,17 +29,5 @@ functions:
     path: "./src/index.ts:initMapViewSidebar"
     events:
       - editor:init
-      - editor:updated
-
-  # list:
-  #   path: "./src/runtime/api.ts:listViews"
-  #   syscall: "mapview.list"
-  # flyTo:
-  #   path: "./src/runtime/api.ts:flyTo"
-  #   syscall: "mapview.flyTo"
-  # setMarkers:
-  #   path: "./map_api.ts:setMarkers"
-  #   syscall: "maplibre.setMarkers"
-  # selectMarker:
-  #   path: "./map_api.ts:selectMarker"
-  #   syscall: "maplibre.selectMarker"
+      - editor:pageLoaded
+      - editor:pageModified

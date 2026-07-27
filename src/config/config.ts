@@ -1,8 +1,3 @@
-import {
-	DEFAULT_FIT_PADDING,
-	DEFAULT_HEIGHT,
-	DEFAULT_SOURCE_LINE_COLORS,
-} from "./constants.ts";
 import type {
 	Coordinate,
 	FileLayerConfig,
@@ -15,6 +10,11 @@ import type {
 	SourceStyle,
 } from "../shared/types.ts";
 import { asString } from "../shared/utils.ts";
+import {
+	DEFAULT_FIT_PADDING,
+	DEFAULT_HEIGHT,
+	DEFAULT_SOURCE_LINE_COLORS,
+} from "./constants.ts";
 
 export function parseWidgetConfig(content: string): RawMapConfig {
 	const trimmed = content.trim();
@@ -39,7 +39,24 @@ export function parseWidgetConfig(content: string): RawMapConfig {
 		throw new Error("Map config JSON must be an object.");
 	}
 
+	assertNoLegacyTopLevelFields(parsed as Record<string, unknown>);
 	return parsed as RawMapConfig;
+}
+
+function assertNoLegacyTopLevelFields(
+	rawConfig: Record<string, unknown>,
+): void {
+	if ("source" in rawConfig) {
+		throw new Error(
+			'`source` is no longer supported. Migrate to `layers`, for example: { "layers": [{ "path": "/tracks/day-1.gpx" }] }.',
+		);
+	}
+
+	if ("markers" in rawConfig) {
+		throw new Error(
+			'`markers` is no longer supported at the top level. Migrate to `layers`, for example: { "layers": [{ "kind": "markers", "markers": [...] }] }.',
+		);
+	}
 }
 
 function asCoordinate(value: unknown): Coordinate | undefined {
@@ -595,40 +612,6 @@ function normalizeLayers(
 	);
 }
 
-function normalizeLegacySourceLayers(
-	sourceValue: unknown,
-	defaultSourceStyle: SourceStyle,
-	defaultSourceCacheTtlMs: number,
-): FileLayerConfig[] {
-	if (sourceValue === undefined) {
-		return [];
-	}
-
-	if (Array.isArray(sourceValue)) {
-		return sourceValue.map((source, index) =>
-			normalizeFileLayer(
-				typeof source === "string"
-					? source
-					: (source as Record<string, unknown>),
-				index,
-				defaultSourceStyle,
-				defaultSourceCacheTtlMs,
-			),
-		);
-	}
-
-	return [
-		normalizeFileLayer(
-			typeof sourceValue === "string"
-				? sourceValue
-				: (sourceValue as Record<string, unknown>),
-			0,
-			defaultSourceStyle,
-			defaultSourceCacheTtlMs,
-		),
-	];
-}
-
 function assignDefaultSourceLineColors(layers: LayerConfig[]): LayerConfig[] {
 	let colorIndex = 0;
 	return layers.map((layer) => {
@@ -703,29 +686,9 @@ export function normalizeConfig(rawConfig: RawMapConfig): MapConfig {
 		markerStyle,
 		sourceCacheTtlMs,
 	);
-	const legacySourceLayers = normalizeLegacySourceLayers(
-		rawConfig.source,
-		sourceStyle,
-		sourceCacheTtlMs,
-	);
-	const legacyMarkerLayer =
-		rawConfig.markers === undefined
-			? []
-			: [
-					{
-						kind: "markers" as const,
-						visible: true,
-						style: markerStyle,
-						markers: normalizeMarkers(rawConfig.markers, markerStyle),
-					},
-				];
 
 	return {
-		layers: assignDefaultSourceLineColors([
-			...explicitLayers,
-			...legacySourceLayers,
-			...legacyMarkerLayer,
-		]),
+		layers: assignDefaultSourceLineColors(explicitLayers),
 		height,
 		center,
 		zoom,

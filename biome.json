@@ -7,7 +7,7 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["*.ts", "test/**/*.ts", "mapview.yaml"]
+		"includes": ["src/**/*.ts", "test/**/*.ts", "mapview.yaml"]
 	},
 	"formatter": {
 		"enabled": true,
